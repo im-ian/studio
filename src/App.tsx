@@ -1,9 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 
-import { Canvas } from "./components/Canvas.tsx";
-import { Header } from "./components/Header.tsx";
-import { SidePanel } from "./components/SidePanel.tsx";
-import { Toolbar } from "./components/Toolbar.tsx";
+import Header from "./components/shared/Header.tsx";
 import { colors } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
@@ -26,11 +23,7 @@ function App() {
   return (
     <div {...stylex.props(styles.app)}>
       <Header />
-      <div {...stylex.props(styles.middle)}>
-        <Toolbar />
-        <Canvas />
-        <SidePanel />
-      </div>
+      <div {...stylex.props(styles.middle)}></div>
     </div>
   );
 }
