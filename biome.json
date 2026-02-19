@@ -16,8 +16,7 @@
   },
   "javascript": {
     "formatter": {
-      "arrowParentheses": "always",
-      "jsxQuoteStyle": "single"
+      "arrowParentheses": "always"
     }
   },
   "linter": {
