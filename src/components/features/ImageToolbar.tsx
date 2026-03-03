@@ -42,7 +42,7 @@ const styles = stylex.create({
     },
   },
   label: {
-    fontSize: fontSize.xxsmall,
+    fontSize: fontSize.xsmall,
     fontWeight: 500,
     opacity: 0.9,
   },
@@ -62,6 +62,8 @@ interface ImageToolbarProps {
   onSaveClick?: () => void;
 }
 
+const ICON_SIZE = 18;
+
 export default function ImageToolbar({
   onUndo,
   onRedo,
@@ -77,7 +79,7 @@ export default function ImageToolbar({
         onClick={onUndo}
         aria-label="Undo"
       >
-        <RotateCcw size={20} />
+        <RotateCcw size={ICON_SIZE} />
         <span {...stylex.props(styles.label)}>실행 취소</span>
       </button>
       <button
@@ -86,7 +88,7 @@ export default function ImageToolbar({
         onClick={onRedo}
         aria-label="Redo"
       >
-        <RotateCw size={20} />
+        <RotateCw size={ICON_SIZE} />
         <span {...stylex.props(styles.label)}>다시 실행</span>
       </button>
 
@@ -98,7 +100,7 @@ export default function ImageToolbar({
         onClick={onFilterClick}
         aria-label="Add Filter"
       >
-        <Layers size={20} />
+        <Layers size={ICON_SIZE} />
         <span {...stylex.props(styles.label)}>필터 추가</span>
       </button>
       <button
@@ -107,7 +109,7 @@ export default function ImageToolbar({
         onClick={onEditClick}
         aria-label="Edit"
       >
-        <Edit3 size={20} />
+        <Edit3 size={ICON_SIZE} />
         <span {...stylex.props(styles.label)}>편집</span>
       </button>
 
@@ -119,7 +121,7 @@ export default function ImageToolbar({
         onClick={onSaveClick}
         aria-label="Save"
       >
-        <Save size={20} />
+        <Save size={ICON_SIZE} />
         <span {...stylex.props(styles.label)}>저장</span>
       </button>
     </div>
