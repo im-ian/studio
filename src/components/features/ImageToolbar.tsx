@@ -9,6 +9,7 @@ import {
   RotateCcw,
   RotateCw,
   Save,
+  Trash2,
 } from "react-feather";
 
 import {
@@ -119,6 +120,31 @@ const styles = stylex.create({
     color: "white",
     minWidth: "20px",
   },
+  clearButton: {
+    width: "100%",
+    marginTop: spacing.small,
+    padding: `${spacing.small} ${spacing.small}`,
+    backgroundColor: "rgba(255, 59, 48, 0.2)",
+    color: "#ff3b30",
+    borderWidth: 0,
+    borderStyle: "solid",
+    borderRadius: radius.sm,
+    fontSize: fontSize.small,
+    fontWeight: 600,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    transition: "all 0.2s ease",
+    ":hover": {
+      backgroundColor: "rgba(255, 59, 48, 0.3)",
+      transform: "translateY(-1px)",
+    },
+    ":active": {
+      transform: "translateY(0)",
+    },
+  },
   toolbar: {
     width: "100%",
     display: "flex",
@@ -176,6 +202,7 @@ interface ImageToolbarProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onSaveClick?: () => void;
+  onClearAll?: () => void;
 }
 
 const ICON_SIZE = 18;
@@ -196,6 +223,7 @@ export default function ImageToolbar({
   onUndo,
   onRedo,
   onSaveClick,
+  onClearAll,
 }: ImageToolbarProps) {
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
   const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
@@ -329,6 +357,17 @@ export default function ImageToolbar({
                       />
                     </div>
                   </>
+                )}
+
+                {drawingSettings.selectedSubTool === "eraser" && (
+                  <button
+                    type="button"
+                    {...stylex.props(styles.clearButton)}
+                    onClick={onClearAll}
+                  >
+                    <Trash2 size={14} />
+                    모두 지우기
+                  </button>
                 )}
               </div>
             )}

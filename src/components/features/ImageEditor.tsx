@@ -316,6 +316,14 @@ export default function ImageEditor() {
     console.log("Save clicked");
   };
 
+  const handleClearAll = () => {
+    const canvas = drawingCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
   if (!imageUrl) {
     return (
       <label
@@ -377,6 +385,7 @@ export default function ImageEditor() {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onSaveClick={handleSaveClick}
+        onClearAll={handleClearAll}
       />
     </div>
   );
