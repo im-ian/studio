@@ -55,3 +55,13 @@ export const size = stylex.defineVars({
   "1/6": "16.66%",
   "5/6": "83.33%",
 });
+
+export const fontSize = stylex.defineVars({
+  xxsmall: "9px",
+  xsmall: "10px",
+  small: "12px",
+  medium: "16px",
+  large: "20px",
+  xlarge: "24px",
+  xxlarge: "32px",
+});

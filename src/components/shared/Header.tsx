@@ -5,11 +5,16 @@ import { radius, spacing } from "../../tokens.stylex.ts";
 
 const styles = stylex.create({
   header: {
+    position: "fixed",
+    top: spacing.medium,
+    left: spacing.medium,
+    right: spacing.medium,
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: spacing.medium,
+    padding: `${spacing.small} ${spacing.small}`,
     borderRadius: radius["2xl"],
+    zIndex: 1000,
   },
   logoContainer: {
     display: "flex",
@@ -17,7 +22,7 @@ const styles = stylex.create({
     gap: spacing.xsmall,
   },
   logo: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 800,
   },
   menu: {

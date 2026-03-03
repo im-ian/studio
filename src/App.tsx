@@ -8,17 +8,18 @@ const styles = stylex.create({
   app: {
     display: "flex",
     flexDirection: "column",
+    width: "100vw",
     height: "100vh",
     backgroundColor: colors.bgApp,
     color: colors.textMain,
-    padding: spacing.medium,
-    gap: spacing.medium,
+    overflow: "hidden",
   },
   middle: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    gap: spacing.medium,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
 

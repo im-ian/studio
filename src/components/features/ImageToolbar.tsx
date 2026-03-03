@@ -1,32 +1,32 @@
 import * as stylex from "@stylexjs/stylex";
 import { Edit3, Layers, RotateCcw, RotateCw, Save } from "react-feather";
 
-import { colors, spacing } from "../../tokens.stylex";
+import { colors, fontSize, spacing } from "../../tokens.stylex";
 
 const styles = stylex.create({
   toolbar: {
     position: "fixed",
-    bottom: spacing.large,
-    left: "50%",
-    transform: "translateX(-50%)",
+    width: "100%",
+    bottom: 0,
     display: "flex",
     alignItems: "center",
+    justifyContent: "center",
     gap: spacing.medium,
     padding: `${spacing.small} ${spacing.large}`,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     backdropFilter: "blur(12px)",
-    borderRadius: "100px",
     border: "1px solid rgba(255, 255, 255, 0.2)",
     boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
     zIndex: 1000,
   },
   button: {
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    width: "44px",
-    height: "44px",
-    borderRadius: "50%",
+    gap: "4px",
+    padding: `${spacing.xsmall} ${spacing.small}`,
+    borderRadius: "12px",
     borderStyle: "solid",
     borderWidth: 0,
     backgroundColor: "transparent",
@@ -41,9 +41,14 @@ const styles = stylex.create({
       transform: "scale(0.95)",
     },
   },
+  label: {
+    fontSize: fontSize.xxsmall,
+    fontWeight: 500,
+    opacity: 0.9,
+  },
   divider: {
     width: "1px",
-    height: "24px",
+    height: "32px",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     margin: `0 ${spacing.small}`,
   },
@@ -73,6 +78,7 @@ export default function ImageToolbar({
         aria-label="Undo"
       >
         <RotateCcw size={20} />
+        <span {...stylex.props(styles.label)}>실행 취소</span>
       </button>
       <button
         type="button"
@@ -81,6 +87,7 @@ export default function ImageToolbar({
         aria-label="Redo"
       >
         <RotateCw size={20} />
+        <span {...stylex.props(styles.label)}>다시 실행</span>
       </button>
 
       <div {...stylex.props(styles.divider)} />
@@ -92,6 +99,7 @@ export default function ImageToolbar({
         aria-label="Add Filter"
       >
         <Layers size={20} />
+        <span {...stylex.props(styles.label)}>필터 추가</span>
       </button>
       <button
         type="button"
@@ -100,6 +108,7 @@ export default function ImageToolbar({
         aria-label="Edit"
       >
         <Edit3 size={20} />
+        <span {...stylex.props(styles.label)}>편집</span>
       </button>
 
       <div {...stylex.props(styles.divider)} />
@@ -111,6 +120,7 @@ export default function ImageToolbar({
         aria-label="Save"
       >
         <Save size={20} />
+        <span {...stylex.props(styles.label)}>저장</span>
       </button>
     </div>
   );
