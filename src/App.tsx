@@ -1,7 +1,8 @@
 import * as stylex from "@stylexjs/stylex";
 
 import Header from "./components/shared/Header.tsx";
-import { colors } from "./tokens.stylex.ts";
+import ImageEditor from "./components/shared/ImageEditor.tsx";
+import { colors, spacing } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
   app: {
@@ -10,12 +11,14 @@ const styles = stylex.create({
     height: "100vh",
     backgroundColor: colors.bgApp,
     color: colors.textMain,
-    overflow: "hidden",
+    padding: spacing.medium,
+    gap: spacing.medium,
   },
   middle: {
-    display: "flex",
     flex: 1,
-    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing.medium,
   },
 });
 
@@ -23,7 +26,9 @@ function App() {
   return (
     <div {...stylex.props(styles.app)}>
       <Header />
-      <div {...stylex.props(styles.middle)}></div>
+      <div {...stylex.props(styles.middle)}>
+        <ImageEditor />
+      </div>
     </div>
   );
 }

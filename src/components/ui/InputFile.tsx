@@ -61,8 +61,13 @@ export default function InputFile({
       <input
         ref={inputRef}
         type="file"
-        value={value}
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+        onChange={(e) => {
+          const selectedFile = e.target.files?.[0] ?? null;
+          setFile(selectedFile);
+          if (props.onChange) {
+            props.onChange(e);
+          }
+        }}
         {...stylex.props(styles.displayNone)}
         {...props}
       />
