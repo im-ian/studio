@@ -7,7 +7,7 @@ import {
   originalImageAtom,
   selectionAtom,
 } from "../../store/imageAtoms";
-import { colors, spacing } from "../../tokens.stylex";
+import { colors } from "../../tokens.stylex";
 import ImageToolbar from "./ImageToolbar";
 
 const marchingAnts = stylex.keyframes({
@@ -36,6 +36,7 @@ const styles = stylex.create({
     overflow: "hidden",
     cursor: "crosshair",
     userSelect: "none",
+    touchAction: "none",
   },
   image: {
     display: "block",
@@ -79,35 +80,63 @@ export default function ImageEditor() {
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!wrapperRef.current) return;
-    const rect = wrapperRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  const getCoordinates = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!wrapperRef.current) return { x: 0, y: 0, width: 0, height: 0 };
+      const rect = wrapperRef.current.getBoundingClientRect();
+      let clientX: number;
+      let clientY: number;
 
+      if ("touches" in e) {
+        if (e.touches.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = (e as React.MouseEvent).clientX;
+        clientY = (e as React.MouseEvent).clientY;
+      }
+
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    },
+    [],
+  );
+
+  const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+    const { x, y } = getCoordinates(e);
     setStartPos({ x, y });
     setIsDragging(true);
     setSelection({ x, y, width: 0, height: 0 });
   };
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
+  const handleMove = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
       if (!isDragging || !wrapperRef.current) return;
-      const rect = wrapperRef.current.getBoundingClientRect();
-      const currentX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const currentY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+      const {
+        x: currentX,
+        y: currentY,
+        width: rectWidth,
+        height: rectHeight,
+      } = getCoordinates(e);
 
-      const x = Math.min(startPos.x, currentX);
-      const y = Math.min(startPos.y, currentY);
-      const width = Math.abs(startPos.x - currentX);
-      const height = Math.abs(startPos.y - currentY);
+      const constrainedX = Math.max(0, Math.min(currentX, rectWidth));
+      const constrainedY = Math.max(0, Math.min(currentY, rectHeight));
+
+      const x = Math.min(startPos.x, constrainedX);
+      const y = Math.min(startPos.y, constrainedY);
+      const width = Math.abs(startPos.x - constrainedX);
+      const height = Math.abs(startPos.y - constrainedY);
 
       setSelection({ x, y, width, height });
     },
-    [isDragging, startPos, setSelection],
+    [isDragging, startPos, setSelection, getCoordinates],
   );
 
-  const handleMouseUp = () => {
+  const handleEnd = () => {
     setIsDragging(false);
   };
 
@@ -182,10 +211,13 @@ export default function ImageEditor() {
       <div
         ref={wrapperRef}
         {...stylex.props(styles.editorWrapper)}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseDown={handleStart}
+        onMouseMove={handleMove}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        onTouchStart={handleStart}
+        onTouchMove={handleMove}
+        onTouchEnd={handleEnd}
         onKeyDown={handleKeyDown}
         role="application"
         aria-label="Image selection area"
