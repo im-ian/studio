@@ -3,6 +3,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useRef, useState } from "react";
 
 import {
+  activeToolAtom,
   currentImageAtom,
   originalImageAtom,
   selectionAtom,
@@ -75,6 +76,7 @@ const styles = stylex.create({
 
 export default function ImageEditor() {
   const imageUrl = useAtomValue(currentImageAtom);
+  const activeTool = useAtomValue(activeToolAtom);
   const [selection, setSelection] = useAtom(selectionAtom);
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
@@ -107,6 +109,7 @@ export default function ImageEditor() {
   );
 
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (activeTool !== "select") return;
     const { x, y } = getCoordinates(e);
     setStartPos({ x, y });
     setIsDragging(true);
@@ -115,7 +118,7 @@ export default function ImageEditor() {
 
   const handleMove = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (!isDragging || !wrapperRef.current) return;
+      if (!isDragging || !wrapperRef.current || activeTool !== "select") return;
       const {
         x: currentX,
         y: currentY,
@@ -133,7 +136,7 @@ export default function ImageEditor() {
 
       setSelection({ x, y, width, height });
     },
-    [isDragging, startPos, setSelection, getCoordinates],
+    [isDragging, startPos, setSelection, getCoordinates, activeTool],
   );
 
   const handleEnd = () => {
@@ -169,15 +172,6 @@ export default function ImageEditor() {
 
   const handleRedo = () => {
     console.log("Redo clicked");
-  };
-
-  const handleFilterClick = () => {
-    console.log("Filter clicked - Open Modal");
-    // TODO: Implement Modal
-  };
-
-  const handleEditClick = () => {
-    console.log("Edit clicked");
   };
 
   const handleSaveClick = () => {
@@ -243,8 +237,6 @@ export default function ImageEditor() {
       <ImageToolbar
         onUndo={handleUndo}
         onRedo={handleRedo}
-        onFilterClick={handleFilterClick}
-        onEditClick={handleEditClick}
         onSaveClick={handleSaveClick}
       />
     </div>
