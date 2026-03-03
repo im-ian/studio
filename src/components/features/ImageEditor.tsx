@@ -8,6 +8,7 @@ import {
   selectionAtom,
 } from "../../store/imageAtoms";
 import { colors, spacing } from "../../tokens.stylex";
+import ImageToolbar from "./ImageToolbar";
 
 const marchingAnts = stylex.keyframes({
   "0%": { backgroundPosition: "0 0, 0 100%, 0 0, 100% 0" },
@@ -134,6 +135,27 @@ export default function ImageEditor() {
     }
   };
 
+  const handleUndo = () => {
+    console.log("Undo clicked");
+  };
+
+  const handleRedo = () => {
+    console.log("Redo clicked");
+  };
+
+  const handleFilterClick = () => {
+    console.log("Filter clicked - Open Modal");
+    // TODO: Implement Modal
+  };
+
+  const handleEditClick = () => {
+    console.log("Edit clicked");
+  };
+
+  const handleSaveClick = () => {
+    console.log("Save clicked");
+  };
+
   if (!imageUrl) {
     return (
       <label
@@ -187,6 +209,13 @@ export default function ImageEditor() {
           />
         )}
       </div>
+      <ImageToolbar
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onFilterClick={handleFilterClick}
+        onEditClick={handleEditClick}
+        onSaveClick={handleSaveClick}
+      />
     </div>
   );
 }
