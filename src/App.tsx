@@ -2,7 +2,7 @@ import * as stylex from "@stylexjs/stylex";
 
 import ImageEditor from "./components/features/ImageEditor.tsx";
 import Header from "./components/shared/Header.tsx";
-import { colors, spacing } from "./tokens.stylex.ts";
+import { colors } from "./tokens.stylex.ts";
 
 const styles = stylex.create({
   app: {
