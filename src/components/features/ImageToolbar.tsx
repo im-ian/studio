@@ -1,5 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { useAtom } from "jotai";
+import { useEffect, useState } from "react";
 import {
   Crosshair,
   Edit2,
@@ -10,8 +11,19 @@ import {
   Save,
 } from "react-feather";
 
-import { activeToolAtom, type ToolType } from "../../store/imageAtoms";
+import {
+  activeToolAtom,
+  type DrawingToolType,
+  drawingSettingsAtom,
+  type ToolType,
+} from "../../store/imageAtoms";
 import { colors, fontSize, spacing } from "../../tokens.stylex";
+
+const bounce = stylex.keyframes({
+  "0%, 20%, 50%, 80%, 100%": { transform: "translateY(0)" },
+  "40%": { transform: "translateY(-10px)" },
+  "60%": { transform: "translateY(-5px)" },
+});
 
 const styles = stylex.create({
   container: {
@@ -25,6 +37,7 @@ const styles = stylex.create({
   },
   submenu: {
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     gap: spacing.small,
     padding: `${spacing.small} ${spacing.medium}`,
@@ -39,6 +52,77 @@ const styles = stylex.create({
       to: { opacity: 1, transform: "translateY(0)" },
     }),
     animationDuration: "0.2s",
+  },
+  bounce: {
+    animationName: bounce,
+    animationDuration: "1s",
+    animationIterationCount: 1,
+  },
+  subToolGroup: {
+    display: "flex",
+    gap: spacing.small,
+    alignItems: "center",
+  },
+  controlsGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing.small,
+    width: "100%",
+    paddingTop: spacing.small,
+    borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+  },
+  colorPalette: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    maxWidth: "200px",
+  },
+  colorBubble: {
+    width: "18px",
+    height: "18px",
+    borderRadius: "50%",
+    borderStyle: "solid",
+    borderWidth: 0,
+    cursor: "pointer",
+    transition: "transform 0.1s ease",
+    ":hover": { transform: "scale(1.2)" },
+  },
+  activeColorBubble: {
+    boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 8px rgba(0,0,0,0.3)",
+    transform: "scale(1.2)",
+  },
+  hexInput: {
+    backgroundColor: "rgba(0,0,0,0.2)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "white",
+    fontSize: fontSize.xxsmall,
+    padding: "2px 6px",
+    borderStyle: "solid",
+    borderWidth: 0,
+    borderRadius: "4px",
+    width: "60px",
+    textAlign: "center",
+    outline: "none",
+  },
+  sliderContainer: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.small,
+    width: "100%",
+  },
+  slider: {
+    flex: 1,
+    height: "4px",
+    borderRadius: "2px",
+    WebkitAppearance: "none",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    cursor: "pointer",
+  },
+  sliderLabel: {
+    fontSize: fontSize.xxsmall,
+    color: "white",
+    minWidth: "20px",
   },
   toolbar: {
     width: "100%",
@@ -75,6 +159,7 @@ const styles = stylex.create({
   },
   activeButton: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
+    color: colors.accent,
   },
   label: {
     fontSize: fontSize.xsmall,
@@ -100,15 +185,48 @@ interface ImageToolbarProps {
 
 const ICON_SIZE = 18;
 
+const RAINBOW_COLORS = [
+  "#FF0000",
+  "#FF7F00",
+  "#FFFF00",
+  "#00FF00",
+  "#0000FF",
+  "#4B0082",
+  "#9400D3",
+  "#000000",
+  "#FFFFFF",
+];
+
 export default function ImageToolbar({
   onUndo,
   onRedo,
   onSaveClick,
 }: ImageToolbarProps) {
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
+  const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
+  const [shouldBounce, setShouldBounce] = useState(false);
+
+  useEffect(() => {
+    if (activeTool === "draw" && !drawingSettings.selectedSubTool) {
+      setShouldBounce(true);
+      const timer = setTimeout(() => setShouldBounce(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTool, drawingSettings.selectedSubTool]);
 
   const handleToolClick = (tool: ToolType) => {
     setActiveTool(activeTool === tool ? null : tool);
+  };
+
+  const handleSubToolClick = (subTool: DrawingToolType) => {
+    setDrawingSettings((prev) => ({
+      ...prev,
+      selectedSubTool: prev.selectedSubTool === subTool ? null : subTool,
+    }));
+  };
+
+  const updateDrawingSettings = (updates: Partial<typeof drawingSettings>) => {
+    setDrawingSettings((prev) => ({ ...prev, ...updates }));
   };
 
   const renderSubmenu = () => {
@@ -117,16 +235,91 @@ export default function ImageToolbar({
     switch (activeTool) {
       case "draw":
         return (
-          <div {...stylex.props(styles.submenu)}>
-            <button type="button" {...stylex.props(styles.button)}>
-              펜
-            </button>
-            <button type="button" {...stylex.props(styles.button)}>
-              브러시
-            </button>
-            <button type="button" {...stylex.props(styles.button)}>
-              지우개
-            </button>
+          <div {...stylex.props(styles.submenu, shouldBounce && styles.bounce)}>
+            <div {...stylex.props(styles.subToolGroup)}>
+              <button
+                type="button"
+                {...stylex.props(
+                  styles.button,
+                  drawingSettings.selectedSubTool === "pen" &&
+                    styles.activeButton,
+                )}
+                onClick={() => handleSubToolClick("pen")}
+              >
+                펜
+              </button>
+              <button
+                type="button"
+                {...stylex.props(
+                  styles.button,
+                  drawingSettings.selectedSubTool === "brush" &&
+                    styles.activeButton,
+                )}
+                onClick={() => handleSubToolClick("brush")}
+              >
+                브러시
+              </button>
+              <button
+                type="button"
+                {...stylex.props(
+                  styles.button,
+                  drawingSettings.selectedSubTool === "eraser" &&
+                    styles.activeButton,
+                )}
+                onClick={() => handleSubToolClick("eraser")}
+              >
+                지우개
+              </button>
+            </div>
+
+            {drawingSettings.selectedSubTool && (
+              <div {...stylex.props(styles.controlsGroup)}>
+                <div {...stylex.props(styles.sliderContainer)}>
+                  <span {...stylex.props(styles.sliderLabel)}>크기</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="50"
+                    value={drawingSettings.size}
+                    onChange={(e) =>
+                      updateDrawingSettings({ size: parseInt(e.target.value) })
+                    }
+                    {...stylex.props(styles.slider)}
+                  />
+                  <span {...stylex.props(styles.sliderLabel)}>
+                    {drawingSettings.size}
+                  </span>
+                </div>
+
+                {drawingSettings.selectedSubTool !== "eraser" && (
+                  <div {...stylex.props(styles.colorPalette)}>
+                    {RAINBOW_COLORS.map((color) => (
+                      <button
+                        type="button"
+                        key={color}
+                        {...stylex.props(
+                          styles.colorBubble,
+                          drawingSettings.color === color &&
+                            styles.activeColorBubble,
+                        )}
+                        style={{ backgroundColor: color }}
+                        onClick={() => updateDrawingSettings({ color })}
+                        aria-label={`Select color ${color}`}
+                      />
+                    ))}
+                    <input
+                      type="text"
+                      value={drawingSettings.color}
+                      onChange={(e) =>
+                        updateDrawingSettings({ color: e.target.value })
+                      }
+                      {...stylex.props(styles.hexInput)}
+                      placeholder="#HEX"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       case "filter":

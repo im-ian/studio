@@ -1,10 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   activeToolAtom,
   currentImageAtom,
+  drawingSettingsAtom,
   originalImageAtom,
   selectionAtom,
 } from "../../store/imageAtoms";
@@ -40,10 +41,21 @@ const styles = stylex.create({
     touchAction: "none",
   },
   image: {
+    display: "none",
+  },
+  canvas: {
     display: "block",
     maxWidth: "100%",
     maxHeight: "80vh",
     objectFit: "contain",
+  },
+  drawingCanvas: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
   },
   selectionOverlay: {
     position: "absolute",
@@ -77,15 +89,22 @@ const styles = stylex.create({
 export default function ImageEditor() {
   const imageUrl = useAtomValue(currentImageAtom);
   const activeTool = useAtomValue(activeToolAtom);
+  const drawingSettings = useAtomValue(drawingSettingsAtom);
   const [selection, setSelection] = useAtom(selectionAtom);
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const imageCanvasRef = useRef<HTMLCanvasElement>(null);
+  const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [displayScale, setDisplayScale] = useState({ x: 1, y: 1 });
 
   const getCoordinates = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (!wrapperRef.current) return { x: 0, y: 0, width: 0, height: 0 };
-      const rect = wrapperRef.current.getBoundingClientRect();
+      if (!imageCanvasRef.current) return { x: 0, y: 0, width: 0, height: 0 };
+      const rect = imageCanvasRef.current.getBoundingClientRect();
+      const scaleX = imageCanvasRef.current.width / rect.width;
+      const scaleY = imageCanvasRef.current.height / rect.height;
+
       let clientX: number;
       let clientY: number;
 
@@ -99,47 +118,159 @@ export default function ImageEditor() {
       }
 
       return {
-        x: clientX - rect.left,
-        y: clientY - rect.top,
-        width: rect.width,
-        height: rect.height,
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+        width: imageCanvasRef.current.width,
+        height: imageCanvasRef.current.height,
       };
     },
     [],
   );
 
+  useEffect(() => {
+    if (!imageUrl || !imageCanvasRef.current || !drawingCanvasRef.current)
+      return;
+    const imageCanvas = imageCanvasRef.current;
+    const drawingCanvas = drawingCanvasRef.current;
+    const imgCtx = imageCanvas.getContext("2d");
+    const drawCtx = drawingCanvas.getContext("2d");
+    if (!imgCtx || !drawCtx) return;
+
+    const img = new Image();
+    img.src = imageUrl;
+    img.onload = () => {
+      imageCanvas.width = img.width;
+      imageCanvas.height = img.height;
+      drawingCanvas.width = img.width;
+      drawingCanvas.height = img.height;
+      imgCtx.drawImage(img, 0, 0);
+
+      // Update scale after image load and canvas sized
+      const rect = imageCanvas.getBoundingClientRect();
+      if (rect.width > 0) {
+        setDisplayScale({
+          x: img.width / rect.width,
+          y: img.height / rect.height,
+        });
+      }
+    };
+  }, [imageUrl]);
+
+  // Handle window resize to keep scale accurate
+  useEffect(() => {
+    const handleResize = () => {
+      if (imageCanvasRef.current) {
+        const rect = imageCanvasRef.current.getBoundingClientRect();
+        if (rect.width > 0) {
+          setDisplayScale({
+            x: imageCanvasRef.current.width / rect.width,
+            y: imageCanvasRef.current.height / rect.height,
+          });
+        }
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
-    if (activeTool !== "select") return;
+    if (activeTool !== "select" && activeTool !== "draw") return;
     const { x, y } = getCoordinates(e);
-    setStartPos({ x, y });
-    setIsDragging(true);
-    setSelection({ x, y, width: 0, height: 0 });
+
+    if (activeTool === "select") {
+      setStartPos({ x, y });
+      setIsDragging(true);
+      setSelection({ x, y, width: 0, height: 0 });
+    } else if (activeTool === "draw" && drawingSettings.selectedSubTool) {
+      setIsDragging(true);
+      const ctx = drawingCanvasRef.current?.getContext("2d");
+      if (ctx) {
+        ctx.save(); // Save initial state for clipping
+
+        // Setup drawing styles
+        ctx.strokeStyle =
+          drawingSettings.selectedSubTool === "eraser"
+            ? "rgba(0,0,0,1)"
+            : drawingSettings.color;
+        ctx.lineWidth = drawingSettings.size;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        if (drawingSettings.selectedSubTool === "eraser") {
+          ctx.globalCompositeOperation = "destination-out";
+        } else {
+          ctx.globalCompositeOperation = "source-over";
+          if (drawingSettings.selectedSubTool === "brush") {
+            ctx.shadowBlur = drawingSettings.size / 2;
+            ctx.shadowColor = drawingSettings.color;
+          } else {
+            ctx.shadowBlur = 0;
+          }
+        }
+
+        // Selection masking
+        if (selection && selection.width > 0 && selection.height > 0) {
+          ctx.beginPath();
+          ctx.rect(selection.x, selection.y, selection.width, selection.height);
+          ctx.clip();
+        }
+
+        // Start drawing path
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      }
+    }
   };
 
   const handleMove = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (!isDragging || !wrapperRef.current || activeTool !== "select") return;
+      if (
+        !isDragging ||
+        !drawingCanvasRef.current ||
+        (activeTool !== "select" && activeTool !== "draw")
+      )
+        return;
       const {
         x: currentX,
         y: currentY,
-        width: rectWidth,
-        height: rectHeight,
+        width: canvasWidth,
+        height: canvasHeight,
       } = getCoordinates(e);
 
-      const constrainedX = Math.max(0, Math.min(currentX, rectWidth));
-      const constrainedY = Math.max(0, Math.min(currentY, rectHeight));
+      if (activeTool === "select") {
+        const constrainedX = Math.max(0, Math.min(currentX, canvasWidth));
+        const constrainedY = Math.max(0, Math.min(currentY, canvasHeight));
 
-      const x = Math.min(startPos.x, constrainedX);
-      const y = Math.min(startPos.y, constrainedY);
-      const width = Math.abs(startPos.x - constrainedX);
-      const height = Math.abs(startPos.y - constrainedY);
+        const x = Math.min(startPos.x, constrainedX);
+        const y = Math.min(startPos.y, constrainedY);
+        const width = Math.abs(startPos.x - constrainedX);
+        const height = Math.abs(startPos.y - constrainedY);
 
-      setSelection({ x, y, width, height });
+        setSelection({ x, y, width, height });
+      } else if (activeTool === "draw") {
+        const ctx = drawingCanvasRef.current.getContext("2d");
+        if (ctx) {
+          ctx.lineTo(currentX, currentY);
+          ctx.stroke();
+        }
+      }
     },
     [isDragging, startPos, setSelection, getCoordinates, activeTool],
   );
 
   const handleEnd = () => {
+    if (activeTool === "select" && selection) {
+      if (selection.width < 5 && selection.height < 5) {
+        setSelection(null);
+      }
+    }
+
+    if (activeTool === "draw" && isDragging) {
+      const ctx = drawingCanvasRef.current?.getContext("2d");
+      if (ctx) {
+        ctx.restore(); // Restore context state
+      }
+    }
     setIsDragging(false);
   };
 
@@ -216,20 +347,21 @@ export default function ImageEditor() {
         role="application"
         aria-label="Image selection area"
       >
-        <img
-          src={imageUrl}
-          alt="Original"
-          {...stylex.props(styles.image)}
-          draggable={false}
-        />
+        <div style={{ position: "relative" }}>
+          <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
+          <canvas
+            ref={drawingCanvasRef}
+            {...stylex.props(styles.drawingCanvas)}
+          />
+        </div>
         {selection && (
           <div
             {...stylex.props(styles.selectionOverlay)}
             style={{
-              left: selection.x,
-              top: selection.y,
-              width: selection.width,
-              height: selection.height,
+              left: selection.x / displayScale.x,
+              top: selection.y / displayScale.y,
+              width: selection.width / displayScale.x,
+              height: selection.height / displayScale.y,
             }}
           />
         )}
