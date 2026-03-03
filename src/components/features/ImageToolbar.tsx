@@ -17,7 +17,9 @@ import {
   drawingSettingsAtom,
   type ToolType,
 } from "../../store/imageAtoms";
-import { colors, fontSize, spacing } from "../../tokens.stylex";
+import { colors, fontSize, radius, spacing } from "../../tokens.stylex";
+import CircleButton from "../shared/CircleButton";
+import Range from "../shared/Range";
 
 const bounce = stylex.keyframes({
   "0%, 20%, 50%, 80%, 100%": { transform: "translateY(0)" },
@@ -73,51 +75,44 @@ const styles = stylex.create({
   },
   colorPalette: {
     display: "flex",
-    gap: "8px",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    maxWidth: "200px",
+    gap: "6px",
+    width: "100%",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  colorBubble: {
-    width: "18px",
-    height: "18px",
-    borderRadius: "50%",
-    borderStyle: "solid",
-    borderWidth: 0,
-    cursor: "pointer",
-    transition: "transform 0.1s ease",
-    ":hover": { transform: "scale(1.2)" },
-  },
-  activeColorBubble: {
-    boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 8px rgba(0,0,0,0.3)",
-    transform: "scale(1.2)",
+  hexRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: spacing.small,
+    width: "100%",
+    marginTop: spacing.xsmall,
   },
   hexInput: {
     backgroundColor: "rgba(0,0,0,0.2)",
-    border: "1px solid rgba(255,255,255,0.2)",
-    color: "white",
-    fontSize: fontSize.xxsmall,
-    padding: "2px 6px",
     borderStyle: "solid",
     borderWidth: 0,
-    borderRadius: "4px",
-    width: "60px",
-    textAlign: "center",
+    color: "white",
+    fontSize: fontSize.xxsmall,
+    padding: `${spacing.small} ${spacing.small}`,
+    borderRadius: radius.sm,
+    flex: 1,
     outline: "none",
+    ":focus": {
+      borderColor: colors.accent,
+    },
+  },
+  colorPreview: {
+    width: "24px",
+    height: "24px",
+    borderRadius: "4px",
+    border: "1px solid rgba(255,255,255,0.3)",
+    flexShrink: 0,
   },
   sliderContainer: {
     display: "flex",
     alignItems: "center",
     gap: spacing.small,
     width: "100%",
-  },
-  slider: {
-    flex: 1,
-    height: "4px",
-    borderRadius: "2px",
-    WebkitAppearance: "none",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    cursor: "pointer",
   },
   sliderLabel: {
     fontSize: fontSize.xxsmall,
@@ -276,47 +271,64 @@ export default function ImageToolbar({
               <div {...stylex.props(styles.controlsGroup)}>
                 <div {...stylex.props(styles.sliderContainer)}>
                   <span {...stylex.props(styles.sliderLabel)}>크기</span>
-                  <input
-                    type="range"
-                    min="1"
-                    max="50"
-                    value={drawingSettings.size}
-                    onChange={(e) =>
-                      updateDrawingSettings({ size: parseInt(e.target.value) })
+                  <Range
+                    min={1}
+                    max={50}
+                    value={
+                      drawingSettings.selectedSubTool === "pen"
+                        ? drawingSettings.penSize
+                        : drawingSettings.selectedSubTool === "brush"
+                          ? drawingSettings.brushSize
+                          : drawingSettings.eraserSize
                     }
-                    {...stylex.props(styles.slider)}
+                    onChange={(size: number) => {
+                      if (drawingSettings.selectedSubTool === "pen")
+                        updateDrawingSettings({ penSize: size });
+                      else if (drawingSettings.selectedSubTool === "brush")
+                        updateDrawingSettings({ brushSize: size });
+                      else if (drawingSettings.selectedSubTool === "eraser")
+                        updateDrawingSettings({ eraserSize: size });
+                    }}
+                    aria-label="Brush size"
                   />
                   <span {...stylex.props(styles.sliderLabel)}>
-                    {drawingSettings.size}
+                    {drawingSettings.selectedSubTool === "pen"
+                      ? drawingSettings.penSize
+                      : drawingSettings.selectedSubTool === "brush"
+                        ? drawingSettings.brushSize
+                        : drawingSettings.eraserSize}
                   </span>
                 </div>
 
                 {drawingSettings.selectedSubTool !== "eraser" && (
-                  <div {...stylex.props(styles.colorPalette)}>
-                    {RAINBOW_COLORS.map((color) => (
-                      <button
-                        type="button"
-                        key={color}
-                        {...stylex.props(
-                          styles.colorBubble,
-                          drawingSettings.color === color &&
-                            styles.activeColorBubble,
-                        )}
-                        style={{ backgroundColor: color }}
-                        onClick={() => updateDrawingSettings({ color })}
-                        aria-label={`Select color ${color}`}
+                  <>
+                    <div {...stylex.props(styles.colorPalette)}>
+                      {RAINBOW_COLORS.map((color) => (
+                        <CircleButton
+                          key={color}
+                          backgroundColor={color}
+                          isActive={drawingSettings.color === color}
+                          onClick={() => updateDrawingSettings({ color })}
+                          aria-label={`Select color ${color}`}
+                        />
+                      ))}
+                    </div>
+                    <div {...stylex.props(styles.hexRow)}>
+                      <div
+                        {...stylex.props(styles.colorPreview)}
+                        style={{ backgroundColor: drawingSettings.color }}
                       />
-                    ))}
-                    <input
-                      type="text"
-                      value={drawingSettings.color}
-                      onChange={(e) =>
-                        updateDrawingSettings({ color: e.target.value })
-                      }
-                      {...stylex.props(styles.hexInput)}
-                      placeholder="#HEX"
-                    />
-                  </div>
+                      <input
+                        type="text"
+                        value={drawingSettings.color}
+                        onChange={(e) =>
+                          updateDrawingSettings({ color: e.target.value })
+                        }
+                        {...stylex.props(styles.hexInput)}
+                        placeholder="#HEX"
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             )}

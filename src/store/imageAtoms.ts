@@ -8,7 +8,9 @@ export type DrawingToolType = "pen" | "brush" | "eraser";
 
 export interface DrawingSettings {
   selectedSubTool: DrawingToolType | null;
-  size: number;
+  penSize: number;
+  brushSize: number;
+  eraserSize: number;
   color: string;
 }
 
@@ -23,6 +25,8 @@ export const activeToolAtom = atom<ToolType>(null);
 
 export const drawingSettingsAtom = atom<DrawingSettings>({
   selectedSubTool: null,
-  size: 5,
+  penSize: 5,
+  brushSize: 15,
+  eraserSize: 20,
   color: "#000000",
 });

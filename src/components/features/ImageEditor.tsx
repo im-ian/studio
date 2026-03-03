@@ -192,7 +192,14 @@ export default function ImageEditor() {
           drawingSettings.selectedSubTool === "eraser"
             ? "rgba(0,0,0,1)"
             : drawingSettings.color;
-        ctx.lineWidth = drawingSettings.size;
+        const currentSize =
+          drawingSettings.selectedSubTool === "pen"
+            ? drawingSettings.penSize
+            : drawingSettings.selectedSubTool === "brush"
+              ? drawingSettings.brushSize
+              : drawingSettings.eraserSize;
+
+        ctx.lineWidth = currentSize;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
 
@@ -201,7 +208,7 @@ export default function ImageEditor() {
         } else {
           ctx.globalCompositeOperation = "source-over";
           if (drawingSettings.selectedSubTool === "brush") {
-            ctx.shadowBlur = drawingSettings.size / 2;
+            ctx.shadowBlur = currentSize / 2;
             ctx.shadowColor = drawingSettings.color;
           } else {
             ctx.shadowBlur = 0;
