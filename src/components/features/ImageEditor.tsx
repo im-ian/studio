@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Crosshair } from "react-feather";
 
 import {
   activeToolAtom,
@@ -9,7 +10,7 @@ import {
   originalImageAtom,
   selectionAtom,
 } from "../../store/imageAtoms";
-import { colors } from "../../tokens.stylex";
+import { colors, spacing } from "../../tokens.stylex";
 import ImageToolbar from "./ImageToolbar";
 
 const marchingAnts = stylex.keyframes({
@@ -31,7 +32,11 @@ const styles = stylex.create({
   },
   editorWrapper: {
     position: "relative",
-    display: "inline-block",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
     maxWidth: "100%",
     maxHeight: "80vh",
     boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
@@ -39,6 +44,44 @@ const styles = stylex.create({
     cursor: "crosshair",
     userSelect: "none",
     touchAction: "none",
+  },
+  pannableContent: {
+    position: "relative",
+    display: "inline-block",
+    willChange: "transform",
+  },
+  panningResetButton: {
+    position: "absolute",
+    bottom: spacing.medium,
+    right: spacing.medium,
+    zIndex: 1100,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backdropFilter: "blur(8px)",
+    borderRadius: "50%",
+    width: "44px",
+    height: "44px",
+    display: "flex",
+    borderWidth: 0,
+    borderStyle: "solid",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid rgba(255, 255, 255, 0.3)",
+    color: colors.textMain,
+    cursor: "pointer",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+    transition: "all 0.2s ease",
+    animationName: stylex.keyframes({
+      from: { opacity: 0, transform: "scale(0.8) translateY(10px)" },
+      to: { opacity: 1, transform: "scale(1) translateY(0)" },
+    }),
+    animationDuration: "0.3s",
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.3)",
+      transform: "scale(1.1)",
+    },
+    ":active": {
+      transform: "scale(0.95)",
+    },
   },
   image: {
     display: "none",
@@ -97,19 +140,18 @@ export default function ImageEditor() {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const [displayScale, setDisplayScale] = useState({ x: 1, y: 1 });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   const getCoordinates = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (!imageCanvasRef.current) return { x: 0, y: 0, width: 0, height: 0 };
-      const rect = imageCanvasRef.current.getBoundingClientRect();
-      const scaleX = imageCanvasRef.current.width / rect.width;
-      const scaleY = imageCanvasRef.current.height / rect.height;
-
       let clientX: number;
       let clientY: number;
 
       if ("touches" in e) {
-        if (e.touches.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+        if (e.touches.length === 0)
+          return { x: 0, y: 0, width: 0, height: 0, clientX: 0, clientY: 0 };
         clientX = e.touches[0].clientX;
         clientY = e.touches[0].clientY;
       } else {
@@ -117,11 +159,27 @@ export default function ImageEditor() {
         clientY = (e as React.MouseEvent).clientY;
       }
 
+      if (!imageCanvasRef.current)
+        return {
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          clientX,
+          clientY,
+        };
+
+      const rect = imageCanvasRef.current.getBoundingClientRect();
+      const scaleX = imageCanvasRef.current.width / rect.width;
+      const scaleY = imageCanvasRef.current.height / rect.height;
+
       return {
         x: (clientX - rect.left) * scaleX,
         y: (clientY - rect.top) * scaleY,
         width: imageCanvasRef.current.width,
         height: imageCanvasRef.current.height,
+        clientX,
+        clientY,
       };
     },
     [],
@@ -173,9 +231,46 @@ export default function ImageEditor() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  // Handle keyboard for space-pan
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.code === "Space" &&
+        !isSpacePressed &&
+        document.activeElement?.tagName !== "INPUT"
+      ) {
+        setIsSpacePressed(true);
+        // Prevent default spacebar scrolling
+        if (e.target === document.body || e.target === wrapperRef.current) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isSpacePressed]);
+
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
+    const { x, y, clientX, clientY } = getCoordinates(e);
+
+    if (isSpacePressed) {
+      setIsDragging(true);
+      setLastMousePos({ x: clientX, y: clientY });
+      return;
+    }
+
     if (activeTool !== "select" && activeTool !== "draw") return;
-    const { x, y } = getCoordinates(e);
 
     if (activeTool === "select") {
       setStartPos({ x, y });
@@ -242,7 +337,17 @@ export default function ImageEditor() {
         y: currentY,
         width: canvasWidth,
         height: canvasHeight,
+        clientX,
+        clientY,
       } = getCoordinates(e);
+
+      if (isSpacePressed) {
+        const dx = clientX - lastMousePos.x;
+        const dy = clientY - lastMousePos.y;
+        setPanOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
+        setLastMousePos({ x: clientX, y: clientY });
+        return;
+      }
 
       if (activeTool === "select") {
         const constrainedX = Math.max(0, Math.min(currentX, canvasWidth));
@@ -262,7 +367,15 @@ export default function ImageEditor() {
         }
       }
     },
-    [isDragging, startPos, setSelection, getCoordinates, activeTool],
+    [
+      isDragging,
+      startPos,
+      setSelection,
+      getCoordinates,
+      activeTool,
+      isSpacePressed,
+      lastMousePos,
+    ],
   );
 
   const handleEnd = () => {
@@ -378,24 +491,46 @@ export default function ImageEditor() {
         onKeyDown={handleKeyDown}
         role="application"
         aria-label="Image selection area"
+        style={{
+          cursor: isSpacePressed
+            ? isDragging
+              ? "grabbing"
+              : "grab"
+            : "crosshair",
+        }}
       >
-        <div style={{ position: "relative" }}>
-          <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
-          <canvas
-            ref={drawingCanvasRef}
-            {...stylex.props(styles.drawingCanvas)}
-          />
+        <div
+          {...stylex.props(styles.pannableContent)}
+          style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px)` }}
+        >
+          <div style={{ position: "relative" }}>
+            <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
+            <canvas
+              ref={drawingCanvasRef}
+              {...stylex.props(styles.drawingCanvas)}
+            />
+          </div>
+          {selection && (
+            <div
+              {...stylex.props(styles.selectionOverlay)}
+              style={{
+                left: selection.x / displayScale.x,
+                top: selection.y / displayScale.y,
+                width: selection.width / displayScale.x,
+                height: selection.height / displayScale.y,
+              }}
+            />
+          )}
         </div>
-        {selection && (
-          <div
-            {...stylex.props(styles.selectionOverlay)}
-            style={{
-              left: selection.x / displayScale.x,
-              top: selection.y / displayScale.y,
-              width: selection.width / displayScale.x,
-              height: selection.height / displayScale.y,
-            }}
-          />
+        {(panOffset.x !== 0 || panOffset.y !== 0) && (
+          <button
+            type="button"
+            {...stylex.props(styles.panningResetButton)}
+            onClick={() => setPanOffset({ x: 0, y: 0 })}
+            aria-label="Reset position"
+          >
+            <Crosshair size={20} />
+          </button>
         )}
       </div>
       <ImageToolbar
