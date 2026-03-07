@@ -313,7 +313,24 @@ export default function ImageEditor() {
   };
 
   const handleSaveClick = () => {
-    console.log("Save clicked");
+    if (!imageCanvasRef.current || !drawingCanvasRef.current) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = imageCanvasRef.current.width;
+    canvas.height = imageCanvasRef.current.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Draw background image
+    ctx.drawImage(imageCanvasRef.current, 0, 0);
+    // Draw drawings on top
+    ctx.drawImage(drawingCanvasRef.current, 0, 0);
+
+    const dataUrl = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.download = "studio-edit.png";
+    link.href = dataUrl;
+    link.click();
   };
 
   const handleClearAll = () => {
