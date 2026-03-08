@@ -34,6 +34,8 @@ button,
 input,
 select {
   margin: 0;
+  border-width: 0;
+  border-style: solid;
 }
 
 html {

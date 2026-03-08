@@ -5,8 +5,6 @@ const styles = stylex.create({
     width: "18px",
     height: "18px",
     borderRadius: "50%",
-    borderStyle: "solid",
-    borderWidth: 0,
     cursor: "pointer",
     transition: "transform 0.1s ease",
     ":hover": { transform: "scale(1.2)" },

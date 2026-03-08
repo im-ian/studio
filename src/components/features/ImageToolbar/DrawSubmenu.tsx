@@ -41,8 +41,6 @@ const styles = stylex.create({
   },
   hexInput: {
     backgroundColor: "rgba(0,0,0,0.2)",
-    borderStyle: "solid",
-    borderWidth: 0,
     color: "white",
     fontSize: fontSize.xxsmall,
     padding: `${spacing.small} ${spacing.small}`,
@@ -77,8 +75,6 @@ const styles = stylex.create({
     padding: `${spacing.small} ${spacing.small}`,
     backgroundColor: "rgba(255, 59, 48, 0.2)",
     color: "#ff3b30",
-    borderWidth: 0,
-    borderStyle: "solid",
     borderRadius: radius.sm,
     fontSize: fontSize.small,
     fontWeight: 600,

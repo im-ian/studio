@@ -61,8 +61,6 @@ const styles = stylex.create({
     width: "44px",
     height: "44px",
     display: "flex",
-    borderWidth: 0,
-    borderStyle: "solid",
     alignItems: "center",
     justifyContent: "center",
     border: "1px solid rgba(255, 255, 255, 0.3)",

@@ -12,8 +12,6 @@ const styles = stylex.create({
     gap: "4px",
     padding: `${spacing.xsmall} ${spacing.small}`,
     borderRadius: "12px",
-    borderStyle: "solid",
-    borderWidth: 0,
     backgroundColor: "transparent",
     color: colors.textMain,
     cursor: "pointer",
