@@ -141,6 +141,15 @@ export default function ImageEditor() {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
+  const [showBrushPreview, setShowBrushPreview] = useState(false);
+
+  const currentBrushSize =
+    drawingSettings.selectedSubTool === "pen"
+      ? drawingSettings.penSize
+      : drawingSettings.selectedSubTool === "brush"
+        ? drawingSettings.brushSize
+        : drawingSettings.eraserSize;
 
   const getCoordinates = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
@@ -285,12 +294,7 @@ export default function ImageEditor() {
           drawingSettings.selectedSubTool === "eraser"
             ? "rgba(0,0,0,1)"
             : drawingSettings.color;
-        const currentSize =
-          drawingSettings.selectedSubTool === "pen"
-            ? drawingSettings.penSize
-            : drawingSettings.selectedSubTool === "brush"
-              ? drawingSettings.brushSize
-              : drawingSettings.eraserSize;
+        const currentSize = currentBrushSize;
 
         ctx.lineWidth = currentSize;
         ctx.lineCap = "round";
@@ -346,14 +350,14 @@ export default function ImageEditor() {
     }
   };
 
+  const handleMouseEnter = () => setShowBrushPreview(true);
+  const handleMouseLeave = () => {
+    setShowBrushPreview(false);
+    setIsDragging(false);
+  };
+
   const handleMove = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
-      if (
-        !isDragging ||
-        !drawingCanvasRef.current ||
-        (activeTool !== "select" && activeTool !== "draw")
-      )
-        return;
       const {
         x: currentX,
         y: currentY,
@@ -362,6 +366,17 @@ export default function ImageEditor() {
         clientX,
         clientY,
       } = getCoordinates(e);
+
+      setMouseCanvasPos({ x: currentX, y: currentY });
+
+      if (
+        !isDragging ||
+        !drawingCanvasRef.current ||
+        (activeTool !== "select" && activeTool !== "draw")
+      )
+        return;
+
+      setMouseCanvasPos({ x: currentX, y: currentY });
 
       if (isSpacePressed) {
         const dx = clientX - lastMousePos.x;
@@ -530,7 +545,8 @@ export default function ImageEditor() {
         onMouseDown={handleStart}
         onMouseMove={handleMove}
         onMouseUp={handleEnd}
-        onMouseLeave={handleEnd}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         onTouchStart={handleStart}
         onTouchMove={handleMove}
         onTouchEnd={handleEnd}
@@ -567,6 +583,26 @@ export default function ImageEditor() {
               }}
             />
           )}
+          {showBrushPreview &&
+            activeTool === "draw" &&
+            drawingSettings.selectedSubTool && (
+              <div
+                style={{
+                  position: "absolute",
+                  pointerEvents: "none",
+                  left: mouseCanvasPos.x / displayScale.x,
+                  top: mouseCanvasPos.y / displayScale.y,
+                  width: currentBrushSize / displayScale.x,
+                  height: currentBrushSize / displayScale.y,
+                  border: "1px solid rgba(255, 255, 255, 0.8)",
+                  borderRadius: "50%",
+                  transform: "translate(-50%, -50%)",
+                  boxShadow: "0 0 2px rgba(0,0,0,0.5)",
+                  mixBlendMode: "difference",
+                  zIndex: 100,
+                }}
+              />
+            )}
         </div>
         {(panOffset.x !== 0 || panOffset.y !== 0) && (
           <button
