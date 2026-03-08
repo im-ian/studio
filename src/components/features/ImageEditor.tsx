@@ -298,6 +298,30 @@ export default function ImageEditor() {
 
         if (drawingSettings.selectedSubTool === "eraser") {
           ctx.globalCompositeOperation = "destination-out";
+          // If erasing background, also setup on image canvas
+          if (drawingSettings.eraseBackground) {
+            const imgCtx = imageCanvasRef.current?.getContext("2d");
+            if (imgCtx) {
+              imgCtx.save();
+              imgCtx.globalCompositeOperation = "destination-out";
+              imgCtx.lineWidth = currentSize;
+              imgCtx.lineCap = "round";
+              imgCtx.lineJoin = "round";
+              // Apply selection clipping to background too if needed
+              if (selection && selection.width > 0 && selection.height > 0) {
+                imgCtx.beginPath();
+                imgCtx.rect(
+                  selection.x,
+                  selection.y,
+                  selection.width,
+                  selection.height,
+                );
+                imgCtx.clip();
+              }
+              imgCtx.beginPath();
+              imgCtx.moveTo(x, y);
+            }
+          }
         } else {
           ctx.globalCompositeOperation = "source-over";
           if (drawingSettings.selectedSubTool === "brush") {
@@ -362,6 +386,18 @@ export default function ImageEditor() {
         if (ctx) {
           ctx.lineTo(currentX, currentY);
           ctx.stroke();
+
+          // Also stroke background if erasing background
+          if (
+            drawingSettings.selectedSubTool === "eraser" &&
+            drawingSettings.eraseBackground
+          ) {
+            const imgCtx = imageCanvasRef.current?.getContext("2d");
+            if (imgCtx) {
+              imgCtx.lineTo(currentX, currentY);
+              imgCtx.stroke();
+            }
+          }
         }
       }
     },
@@ -373,6 +409,7 @@ export default function ImageEditor() {
       activeTool,
       isSpacePressed,
       lastMousePos,
+      drawingSettings,
     ],
   );
 
@@ -387,6 +424,17 @@ export default function ImageEditor() {
       const ctx = drawingCanvasRef.current?.getContext("2d");
       if (ctx) {
         ctx.restore(); // Restore context state
+      }
+
+      // Restore background context if erased
+      if (
+        drawingSettings.selectedSubTool === "eraser" &&
+        drawingSettings.eraseBackground
+      ) {
+        const imgCtx = imageCanvasRef.current?.getContext("2d");
+        if (imgCtx) {
+          imgCtx.restore();
+        }
       }
     }
     setIsDragging(false);

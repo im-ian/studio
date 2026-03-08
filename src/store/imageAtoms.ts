@@ -12,6 +12,7 @@ export interface DrawingSettings {
   brushSize: number;
   eraserSize: number;
   color: string;
+  eraseBackground: boolean;
 }
 
 export const selectionAtom = atom<{
@@ -29,4 +30,5 @@ export const drawingSettingsAtom = atom<DrawingSettings>({
   brushSize: 15,
   eraserSize: 20,
   color: "#000000",
+  eraseBackground: false,
 });

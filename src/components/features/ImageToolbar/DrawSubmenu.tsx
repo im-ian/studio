@@ -9,6 +9,7 @@ import { colors, fontSize, radius, spacing } from "../../../tokens.stylex";
 import CircleButton from "../../shared/CircleButton";
 import IconButton from "../../shared/IconButton";
 import Range from "../../shared/Range";
+import Toggle from "../../shared/Toggle";
 import SubmenuContainer from "./SubmenuContainer";
 
 const styles = stylex.create({
@@ -95,6 +96,13 @@ const styles = stylex.create({
   activeButton: {
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     color: colors.accent,
+  },
+  eraserControls: {
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing.medium,
+    width: "100%",
+    paddingTop: spacing.small,
   },
 });
 
@@ -218,14 +226,23 @@ export default function DrawSubmenu({
           )}
 
           {drawingSettings.selectedSubTool === "eraser" && (
-            <button
-              type="button"
-              {...stylex.props(styles.clearButton)}
-              onClick={onClearAll}
-            >
-              <Trash2 size={14} />
-              모두 지우기
-            </button>
+            <div {...stylex.props(styles.eraserControls)}>
+              <Toggle
+                isActive={drawingSettings.eraseBackground}
+                onToggle={(val) =>
+                  updateDrawingSettings({ eraseBackground: val })
+                }
+                label="배경까지 지우기"
+              />
+              <button
+                type="button"
+                {...stylex.props(styles.clearButton)}
+                onClick={onClearAll}
+              >
+                <Trash2 size={14} />
+                모두 지우기
+              </button>
+            </div>
           )}
         </div>
       )}
