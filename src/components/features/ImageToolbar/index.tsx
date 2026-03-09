@@ -1,6 +1,6 @@
 import * as stylex from "@stylexjs/stylex";
 import { useAtom } from "jotai";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Crosshair,
   Edit2,
@@ -11,6 +11,7 @@ import {
   Save,
 } from "react-feather";
 
+import { useClickOutside } from "../../../hooks/useClickOutside";
 import {
   activeToolAtom,
   drawingSettingsAtom,
@@ -82,6 +83,10 @@ export default function ImageToolbar({
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
   const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
   const [shouldBounce, setShouldBounce] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [displayedTool, setDisplayedTool] = useState<ToolType>(null);
+  const [isExiting, setIsExiting] = useState(false);
+  const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
 
   useEffect(() => {
     if (activeTool === "draw" && !drawingSettings.selectedSubTool) {
@@ -91,8 +96,41 @@ export default function ImageToolbar({
     }
   }, [activeTool, drawingSettings.selectedSubTool]);
 
+  useClickOutside(containerRef, () => setIsSubmenuOpen(false), isSubmenuOpen);
+
+  useEffect(() => {
+    if (activeTool) {
+      setIsSubmenuOpen(true);
+    } else {
+      setIsSubmenuOpen(false);
+    }
+  }, [activeTool]);
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+
+    if (isSubmenuOpen && activeTool) {
+      setDisplayedTool(activeTool);
+      setIsExiting(false);
+    } else if (displayedTool) {
+      setIsExiting(true);
+      timeout = setTimeout(() => {
+        setDisplayedTool(null);
+        setIsExiting(false);
+      }, 300);
+    }
+
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [isSubmenuOpen, activeTool, displayedTool]);
+
   const handleToolClick = (tool: ToolType) => {
-    setActiveTool(activeTool === tool ? null : tool);
+    if (activeTool === tool) {
+      setIsSubmenuOpen(!isSubmenuOpen);
+    } else {
+      setActiveTool(tool);
+    }
   };
 
   const updateDrawingSettings = (updates: Partial<typeof drawingSettings>) => {
@@ -100,9 +138,9 @@ export default function ImageToolbar({
   };
 
   const renderSubmenu = () => {
-    if (!activeTool) return null;
+    if (!displayedTool) return null;
 
-    switch (activeTool) {
+    switch (displayedTool) {
       case "draw":
         return (
           <DrawSubmenu
@@ -110,19 +148,20 @@ export default function ImageToolbar({
             updateDrawingSettings={updateDrawingSettings}
             onClearAll={onClearAll}
             shouldBounce={shouldBounce}
+            isExiting={isExiting}
           />
         );
       case "filter":
-        return <FilterSubmenu />;
+        return <FilterSubmenu isExiting={isExiting} />;
       case "edit":
-        return <EditSubmenu />;
+        return <EditSubmenu isExiting={isExiting} />;
       default:
         return null;
     }
   };
 
   return (
-    <div {...stylex.props(styles.container)}>
+    <div ref={containerRef} {...stylex.props(styles.container)}>
       {renderSubmenu()}
       <div {...stylex.props(styles.toolbar)}>
         <IconButton onClick={onUndo} aria-label="Undo">

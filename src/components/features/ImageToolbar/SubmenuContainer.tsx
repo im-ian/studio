@@ -21,6 +21,12 @@ const styles = stylex.create({
       to: { opacity: 1, transform: "translateY(0)" },
     }),
     animationDuration: "0.2s",
+    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+  },
+  closing: {
+    opacity: 0,
+    transform: "translateY(20px) scale(0.95)",
+    pointerEvents: "none",
   },
   bounce: {
     animationName: stylex.keyframes({
@@ -36,14 +42,22 @@ const styles = stylex.create({
 interface SubmenuContainerProps {
   children: ReactNode;
   shouldBounce?: boolean;
+  isExiting?: boolean;
 }
 
 export default function SubmenuContainer({
   children,
   shouldBounce = false,
+  isExiting = false,
 }: SubmenuContainerProps) {
   return (
-    <div {...stylex.props(styles.submenu, shouldBounce && styles.bounce)}>
+    <div
+      {...stylex.props(
+        styles.submenu,
+        isExiting && styles.closing,
+        shouldBounce && styles.bounce,
+      )}
+    >
       {children}
     </div>
   );
