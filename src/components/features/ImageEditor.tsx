@@ -172,6 +172,11 @@ export default function ImageEditor() {
     history: HistoryState;
   } | null>(null);
 
+  const historyRef = useRef(history);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
   const pushHistory = useCallback(() => {
     const imgCanvas = imageCanvasRef.current;
     const drawCanvas = drawingCanvasRef.current;
@@ -318,17 +323,39 @@ export default function ImageEditor() {
         });
       }
 
-      // Initial history point if none exists
-      setHistory((prev) => {
-        if (prev.snapshots.length === 0) {
-          const snapshot: HistorySnapshot = {
-            backgroundImage: img.src,
-            drawingLayer: null,
+      // Restore drawing layer if history exists (important for session recovery)
+      const currentHistory = historyRef.current;
+      if (
+        currentHistory.snapshots.length > 0 &&
+        currentHistory.currentIndex >= 0
+      ) {
+        const snapshot = currentHistory.snapshots[currentHistory.currentIndex];
+        if (snapshot.drawingLayer) {
+          const drawImg = new Image();
+          drawImg.src = snapshot.drawingLayer;
+          drawImg.onload = () => {
+            const dCtx = drawingCanvas.getContext("2d");
+            if (dCtx) {
+              dCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+              dCtx.drawImage(drawImg, 0, 0);
+            }
           };
-          return { snapshots: [snapshot], currentIndex: 0 };
+        } else {
+          drawCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
         }
-        return prev;
-      });
+      } else {
+        // Initial history point if none exists
+        setHistory((prev) => {
+          if (prev.snapshots.length === 0) {
+            const snapshot: HistorySnapshot = {
+              backgroundImage: img.src,
+              drawingLayer: null,
+            };
+            return { snapshots: [snapshot], currentIndex: 0 };
+          }
+          return prev;
+        });
+      }
     };
   }, [imageUrl, setHistory]);
 
@@ -616,6 +643,7 @@ export default function ImageEditor() {
         const result = event.target?.result as string;
         setCurrentImage(result);
         setOriginalImage(result);
+        setHistory({ snapshots: [], currentIndex: -1 });
       };
       reader.readAsDataURL(file);
     }
@@ -698,115 +726,117 @@ export default function ImageEditor() {
     }
   };
 
-  if (!imageUrl) {
-    return (
-      <label
-        {...stylex.props(styles.container)}
-        style={{ cursor: "pointer" }}
-        htmlFor="image-upload"
-      >
-        <p {...stylex.props(styles.placeholder)}>
-          이미지를 업로드하려면 클릭하세요
-        </p>
-        <input
-          ref={inputRef}
-          id="image-upload"
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          style={{ display: "none" }}
-        />
-      </label>
-    );
-  }
-
   return (
     <div {...stylex.props(styles.container)}>
-      <div
-        ref={wrapperRef}
-        {...stylex.props(styles.editorWrapper)}
-        onMouseDown={handleStart}
-        onMouseMove={handleMove}
-        onMouseUp={handleEnd}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onTouchStart={handleStart}
-        onTouchMove={handleMove}
-        onTouchEnd={handleEnd}
-        onKeyDown={handleKeyDown}
-        role="application"
-        aria-label="Image selection area"
-        style={{
-          cursor: isSpacePressed
-            ? isDragging
-              ? "grabbing"
-              : "grab"
-            : "crosshair",
-        }}
-      >
-        <div
-          {...stylex.props(styles.pannableContent)}
-          style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px)` }}
+      {!imageUrl ? (
+        <label
+          {...stylex.props(styles.container)}
+          style={{ cursor: "pointer" }}
+          htmlFor="image-upload"
         >
-          <div {...stylex.props(styles.canvasContainer)}>
-            <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
-            <canvas
-              ref={drawingCanvasRef}
-              {...stylex.props(styles.drawingCanvas)}
-            />
-          </div>
-          {selection && (
-            <div
-              {...stylex.props(styles.selectionOverlay)}
-              style={{
-                left: selection.x / displayScale.x,
-                top: selection.y / displayScale.y,
-                width: selection.width / displayScale.x,
-                height: selection.height / displayScale.y,
-              }}
-            />
-          )}
-          {showBrushPreview &&
-            activeTool === "draw" &&
-            drawingSettings.selectedSubTool && (
-              <div
-                style={{
-                  position: "absolute",
-                  pointerEvents: "none",
-                  left: mouseCanvasPos.x / displayScale.x,
-                  top: mouseCanvasPos.y / displayScale.y,
-                  width: currentBrushSize / displayScale.x,
-                  height: currentBrushSize / displayScale.y,
-                  border: "1px solid rgba(255, 255, 255, 0.8)",
-                  borderRadius: "50%",
-                  transform: "translate(-50%, -50%)",
-                  boxShadow: "0 0 2px rgba(0,0,0,0.5)",
-                  mixBlendMode: "difference",
-                  zIndex: 100,
-                }}
-              />
-            )}
-        </div>
-        {(panOffset.x !== 0 || panOffset.y !== 0) && (
-          <button
-            type="button"
-            {...stylex.props(styles.panningResetButton)}
-            onClick={() => setPanOffset({ x: 0, y: 0 })}
-            aria-label="Reset position"
+          <p {...stylex.props(styles.placeholder)}>
+            이미지를 업로드하려면 클릭하세요
+          </p>
+          <input
+            ref={inputRef}
+            id="image-upload"
+            type="file"
+            accept="image/*"
+            onChange={handleFileChange}
+            style={{ display: "none" }}
+          />
+        </label>
+      ) : (
+        <>
+          <div
+            ref={wrapperRef}
+            {...stylex.props(styles.editorWrapper)}
+            onMouseDown={handleStart}
+            onMouseMove={handleMove}
+            onMouseUp={handleEnd}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            onTouchStart={handleStart}
+            onTouchMove={handleMove}
+            onTouchEnd={handleEnd}
+            onKeyDown={handleKeyDown}
+            role="application"
+            aria-label="Image selection area"
+            style={{
+              cursor: isSpacePressed
+                ? isDragging
+                  ? "grabbing"
+                  : "grab"
+                : "crosshair",
+            }}
           >
-            <Crosshair size={20} />
-          </button>
-        )}
-      </div>
-      <ImageToolbar
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onSaveClick={handleSaveClick}
-        onClearAll={handleClearAll}
-        onReset={handleReset}
-        canUndo={history.currentIndex > 0}
-        canRedo={history.currentIndex < history.snapshots.length - 1}
-      />
+            <div
+              {...stylex.props(styles.pannableContent)}
+              style={{
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
+              }}
+            >
+              <div {...stylex.props(styles.canvasContainer)}>
+                <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
+                <canvas
+                  ref={drawingCanvasRef}
+                  {...stylex.props(styles.drawingCanvas)}
+                />
+              </div>
+              {selection && (
+                <div
+                  {...stylex.props(styles.selectionOverlay)}
+                  style={{
+                    left: selection.x / displayScale.x,
+                    top: selection.y / displayScale.y,
+                    width: selection.width / displayScale.x,
+                    height: selection.height / displayScale.y,
+                  }}
+                />
+              )}
+              {showBrushPreview &&
+                activeTool === "draw" &&
+                drawingSettings.selectedSubTool && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      pointerEvents: "none",
+                      left: mouseCanvasPos.x / displayScale.x,
+                      top: mouseCanvasPos.y / displayScale.y,
+                      width: currentBrushSize / displayScale.x,
+                      height: currentBrushSize / displayScale.y,
+                      border: "1px solid rgba(255, 255, 255, 0.8)",
+                      borderRadius: "50%",
+                      transform: "translate(-50%, -50%)",
+                      boxShadow: "0 0 2px rgba(0,0,0,0.5)",
+                      mixBlendMode: "difference",
+                      zIndex: 100,
+                    }}
+                  />
+                )}
+            </div>
+            {(panOffset.x !== 0 || panOffset.y !== 0) && (
+              <button
+                type="button"
+                {...stylex.props(styles.panningResetButton)}
+                onClick={() => setPanOffset({ x: 0, y: 0 })}
+                aria-label="Reset position"
+              >
+                <Crosshair size={20} />
+              </button>
+            )}
+          </div>
+          <ImageToolbar
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onSaveClick={handleSaveClick}
+            onClearAll={handleClearAll}
+            onReset={handleReset}
+            canUndo={history.currentIndex > 0}
+            canRedo={history.currentIndex < history.snapshots.length - 1}
+          />
+        </>
+      )}
 
       <Confirm
         isOpen={isRestoreModalOpen}
@@ -818,7 +848,7 @@ export default function ImageEditor() {
         title="작업 복구"
         message="이전에 편집하던 내용이 있습니다. 복구하시겠습니까?"
         confirmText="복구하기"
-        cancelText="새로 시작"
+        cancelText="새로시작"
       />
     </div>
   );
