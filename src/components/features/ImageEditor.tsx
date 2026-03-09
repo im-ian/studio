@@ -141,9 +141,11 @@ const styles = stylex.create({
 
 export default function ImageEditor() {
   const imageUrl = useAtomValue(currentImageAtom);
+  const originalImage = useAtomValue(originalImageAtom);
   const activeTool = useAtomValue(activeToolAtom);
   const drawingSettings = useAtomValue(drawingSettingsAtom);
   const [selection, setSelection] = useAtom(selectionAtom);
+  const setCurrentImage = useSetAtom(currentImageAtom);
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -468,7 +470,6 @@ export default function ImageEditor() {
   };
 
   const setOriginalImage = useSetAtom(originalImageAtom);
-  const setCurrentImage = useSetAtom(currentImageAtom);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -525,6 +526,22 @@ export default function ImageEditor() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const handleReset = () => {
+    if (!originalImage) return;
+    handleClearAll();
+    setSelection(null);
+    setCurrentImage(originalImage);
+    // Explicitly redraw to original if currentImage didn't change (e.g. no filters yet)
+    if (imageUrl === originalImage && imageCanvasRef.current) {
+      const img = new Image();
+      img.src = originalImage;
+      img.onload = () => {
+        const ctx = imageCanvasRef.current?.getContext("2d");
+        if (ctx) ctx.drawImage(img, 0, 0);
+      };
+    }
   };
 
   if (!imageUrl) {
@@ -632,6 +649,7 @@ export default function ImageEditor() {
         onRedo={handleRedo}
         onSaveClick={handleSaveClick}
         onClearAll={handleClearAll}
+        onReset={handleReset}
       />
     </div>
   );

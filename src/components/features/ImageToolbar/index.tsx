@@ -6,6 +6,7 @@ import {
   Edit2,
   Edit3,
   Layers,
+  RefreshCcw,
   RotateCcw,
   RotateCw,
   Save,
@@ -18,6 +19,7 @@ import {
   type ToolType,
 } from "../../../store/imageAtoms";
 import { colors, fontSize, spacing } from "../../../tokens.stylex";
+import Confirm from "../../shared/Confirm";
 import IconButton from "../../shared/IconButton";
 import DrawSubmenu from "./DrawSubmenu";
 import EditSubmenu from "./EditSubmenu";
@@ -70,6 +72,7 @@ interface ImageToolbarProps {
   onRedo?: () => void;
   onSaveClick?: () => void;
   onClearAll?: () => void;
+  onReset?: () => void;
 }
 
 const ICON_SIZE = 18;
@@ -79,6 +82,7 @@ export default function ImageToolbar({
   onRedo,
   onSaveClick,
   onClearAll,
+  onReset,
 }: ImageToolbarProps) {
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
   const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
@@ -86,6 +90,7 @@ export default function ImageToolbar({
   const [displayedTool, setDisplayedTool] = useState<ToolType>(null);
   const [isExiting, setIsExiting] = useState(false);
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   useClickOutside(containerRef, () => setIsSubmenuOpen(false), isSubmenuOpen);
 
@@ -203,11 +208,31 @@ export default function ImageToolbar({
 
         <div {...stylex.props(styles.divider)} />
 
+        <IconButton
+          onClick={() => setIsResetModalOpen(true)}
+          aria-label="Reset all"
+        >
+          <RefreshCcw size={ICON_SIZE} />
+          <span {...stylex.props(styles.label)}>초기화</span>
+        </IconButton>
         <IconButton onClick={onSaveClick} aria-label="Save">
           <Save size={ICON_SIZE} />
           <span {...stylex.props(styles.label)}>저장</span>
         </IconButton>
       </div>
+
+      <Confirm
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onConfirm={() => {
+          onReset?.();
+          setIsResetModalOpen(false);
+        }}
+        title="초기화 하시겠습니까?"
+        message="작업 중인 모든 내용이 사라집니다."
+        confirmText="초기화"
+        variant="danger"
+      />
     </div>
   );
 }
