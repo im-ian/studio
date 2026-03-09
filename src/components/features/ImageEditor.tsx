@@ -120,6 +120,18 @@ const styles = stylex.create({
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
   },
+  canvasContainer: {
+    position: "relative",
+    backgroundImage: `
+      linear-gradient(45deg, #ccc 25%, transparent 25%), 
+      linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%),
+      linear-gradient(-45deg, transparent 75%, #ccc 75%)
+    `,
+    backgroundSize: "20px 20px",
+    backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+    backgroundColor: "white",
+  },
   placeholder: {
     color: colors.textMain,
     fontSize: 18,
@@ -565,7 +577,7 @@ export default function ImageEditor() {
           {...stylex.props(styles.pannableContent)}
           style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px)` }}
         >
-          <div style={{ position: "relative" }}>
+          <div {...stylex.props(styles.canvasContainer)}>
             <canvas ref={imageCanvasRef} {...stylex.props(styles.canvas)} />
             <canvas
               ref={drawingCanvasRef}
