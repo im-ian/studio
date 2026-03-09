@@ -82,19 +82,10 @@ export default function ImageToolbar({
 }: ImageToolbarProps) {
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
   const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
-  const [shouldBounce, setShouldBounce] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [displayedTool, setDisplayedTool] = useState<ToolType>(null);
   const [isExiting, setIsExiting] = useState(false);
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
-
-  useEffect(() => {
-    if (activeTool === "draw" && !drawingSettings.selectedSubTool) {
-      setShouldBounce(true);
-      const timer = setTimeout(() => setShouldBounce(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTool, drawingSettings.selectedSubTool]);
 
   useClickOutside(containerRef, () => setIsSubmenuOpen(false), isSubmenuOpen);
 
@@ -147,7 +138,6 @@ export default function ImageToolbar({
             drawingSettings={drawingSettings}
             updateDrawingSettings={updateDrawingSettings}
             onClearAll={onClearAll}
-            shouldBounce={shouldBounce}
             isExiting={isExiting}
           />
         );

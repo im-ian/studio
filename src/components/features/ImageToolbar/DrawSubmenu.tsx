@@ -122,7 +122,6 @@ interface DrawSubmenuProps {
   drawingSettings: DrawingSettings;
   updateDrawingSettings: (updates: Partial<DrawingSettings>) => void;
   onClearAll?: () => void;
-  shouldBounce?: boolean;
   isExiting?: boolean;
 }
 
@@ -130,7 +129,6 @@ export default function DrawSubmenu({
   drawingSettings,
   updateDrawingSettings,
   onClearAll,
-  shouldBounce,
   isExiting,
 }: DrawSubmenuProps) {
   const handleSubToolClick = (subTool: DrawingToolType) => {
@@ -141,7 +139,7 @@ export default function DrawSubmenu({
   };
 
   return (
-    <SubmenuContainer shouldBounce={shouldBounce} isExiting={isExiting}>
+    <SubmenuContainer isExiting={isExiting}>
       <div {...stylex.props(styles.subToolGroup)}>
         <IconButton
           isActive={drawingSettings.selectedSubTool === "pen"}

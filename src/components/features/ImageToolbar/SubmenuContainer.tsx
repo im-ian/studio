@@ -28,36 +28,19 @@ const styles = stylex.create({
     transform: "translateY(20px) scale(0.95)",
     pointerEvents: "none",
   },
-  bounce: {
-    animationName: stylex.keyframes({
-      "0%, 20%, 50%, 80%, 100%": { transform: "translateY(0)" },
-      "40%": { transform: "translateY(-10px)" },
-      "60%": { transform: "translateY(-5px)" },
-    }),
-    animationDuration: "1s",
-    animationIterationCount: 1,
-  },
 });
 
 interface SubmenuContainerProps {
   children: ReactNode;
-  shouldBounce?: boolean;
   isExiting?: boolean;
 }
 
 export default function SubmenuContainer({
   children,
-  shouldBounce = false,
   isExiting = false,
 }: SubmenuContainerProps) {
   return (
-    <div
-      {...stylex.props(
-        styles.submenu,
-        isExiting && styles.closing,
-        shouldBounce && styles.bounce,
-      )}
-    >
+    <div {...stylex.props(styles.submenu, isExiting && styles.closing)}>
       {children}
     </div>
   );
