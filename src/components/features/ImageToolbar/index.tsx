@@ -73,6 +73,8 @@ interface ImageToolbarProps {
   onSaveClick?: () => void;
   onClearAll?: () => void;
   onReset?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
 const ICON_SIZE = 18;
@@ -83,6 +85,8 @@ export default function ImageToolbar({
   onSaveClick,
   onClearAll,
   onReset,
+  canUndo = false,
+  canRedo = false,
 }: ImageToolbarProps) {
   const [activeTool, setActiveTool] = useAtom(activeToolAtom);
   const [drawingSettings, setDrawingSettings] = useAtom(drawingSettingsAtom);
@@ -159,11 +163,11 @@ export default function ImageToolbar({
     <div ref={containerRef} {...stylex.props(styles.container)}>
       {renderSubmenu()}
       <div {...stylex.props(styles.toolbar)}>
-        <IconButton onClick={onUndo} aria-label="Undo">
+        <IconButton onClick={onUndo} aria-label="Undo" disabled={!canUndo}>
           <RotateCcw size={ICON_SIZE} />
           <span {...stylex.props(styles.label)}>뒤로</span>
         </IconButton>
-        <IconButton onClick={onRedo} aria-label="Redo">
+        <IconButton onClick={onRedo} aria-label="Redo" disabled={!canRedo}>
           <RotateCw size={ICON_SIZE} />
           <span {...stylex.props(styles.label)}>앞으로</span>
         </IconButton>

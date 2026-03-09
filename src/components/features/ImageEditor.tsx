@@ -7,10 +7,15 @@ import {
   activeToolAtom,
   currentImageAtom,
   drawingSettingsAtom,
+  type HistorySnapshot,
+  type HistoryState,
+  historyAtom,
+  historyLimitAtom,
   originalImageAtom,
   selectionAtom,
 } from "../../store/imageAtoms";
 import { colors, spacing } from "../../tokens.stylex";
+import Confirm from "../shared/Confirm";
 import ImageToolbar from "./ImageToolbar";
 
 const marchingAnts = stylex.keyframes({
@@ -158,6 +163,78 @@ export default function ImageEditor() {
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
   const [showBrushPreview, setShowBrushPreview] = useState(false);
 
+  const [history, setHistory] = useAtom(historyAtom);
+  const historyLimit = useAtomValue(historyLimitAtom);
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [pendingSession, setPendingSession] = useState<{
+    original: string;
+    current: string;
+    history: HistoryState;
+  } | null>(null);
+
+  const pushHistory = useCallback(() => {
+    const imgCanvas = imageCanvasRef.current;
+    const drawCanvas = drawingCanvasRef.current;
+    if (!imgCanvas || !drawCanvas) return;
+
+    const snapshot: HistorySnapshot = {
+      backgroundImage: imgCanvas.toDataURL(),
+      drawingLayer: drawCanvas.toDataURL(),
+    };
+
+    setHistory((prev) => {
+      // If we are undid some steps and now making a new action,
+      // we should remove the "forward" history.
+      const newSnapshots = [
+        ...prev.snapshots.slice(0, prev.currentIndex + 1),
+        snapshot,
+      ];
+
+      if (newSnapshots.length > historyLimit) {
+        newSnapshots.shift();
+      }
+
+      return {
+        snapshots: newSnapshots,
+        currentIndex: newSnapshots.length - 1,
+      };
+    });
+  }, [historyLimit, setHistory]);
+
+  const loadSnapshot = useCallback(
+    (snapshot: HistorySnapshot) => {
+      if (!imageCanvasRef.current || !drawingCanvasRef.current) return;
+      const imgCanvas = imageCanvasRef.current;
+      const drawCanvas = drawingCanvasRef.current;
+      const imgCtx = imgCanvas.getContext("2d");
+      const drawCtx = drawCanvas.getContext("2d");
+
+      if (snapshot.backgroundImage) {
+        const img = new Image();
+        img.src = snapshot.backgroundImage;
+        img.onload = () => {
+          imgCtx?.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
+          imgCtx?.drawImage(img, 0, 0);
+          if (snapshot.backgroundImage) {
+            setCurrentImage(snapshot.backgroundImage);
+          }
+        };
+      }
+
+      if (snapshot.drawingLayer) {
+        const drawImg = new Image();
+        drawImg.src = snapshot.drawingLayer;
+        drawImg.onload = () => {
+          drawCtx?.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+          drawCtx?.drawImage(drawImg, 0, 0);
+        };
+      } else {
+        drawCtx?.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      }
+    },
+    [setCurrentImage],
+  );
+
   const currentBrushSize =
     drawingSettings.selectedSubTool === "pen"
       ? drawingSettings.penSize
@@ -218,10 +295,18 @@ export default function ImageEditor() {
     const img = new Image();
     img.src = imageUrl;
     img.onload = () => {
-      imageCanvas.width = img.width;
-      imageCanvas.height = img.height;
-      drawingCanvas.width = img.width;
-      drawingCanvas.height = img.height;
+      if (
+        imageCanvas.width !== img.width ||
+        imageCanvas.height !== img.height
+      ) {
+        imageCanvas.width = img.width;
+        imageCanvas.height = img.height;
+        drawingCanvas.width = img.width;
+        drawingCanvas.height = img.height;
+      }
+
+      // Only clear and redraw background, don't touch drawing layer
+      imgCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
       imgCtx.drawImage(img, 0, 0);
 
       // Update scale after image load and canvas sized
@@ -232,8 +317,20 @@ export default function ImageEditor() {
           y: img.height / rect.height,
         });
       }
+
+      // Initial history point if none exists
+      setHistory((prev) => {
+        if (prev.snapshots.length === 0) {
+          const snapshot: HistorySnapshot = {
+            backgroundImage: img.src,
+            drawingLayer: null,
+          };
+          return { snapshots: [snapshot], currentIndex: 0 };
+        }
+        return prev;
+      });
     };
-  }, [imageUrl]);
+  }, [imageUrl, setHistory]);
 
   // Handle window resize to keep scale accurate
   useEffect(() => {
@@ -251,6 +348,44 @@ export default function ImageEditor() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Save to localStorage
+  useEffect(() => {
+    if (imageUrl && history.snapshots.length > 0) {
+      const session = {
+        original: originalImage,
+        current: imageUrl,
+        history,
+        lastModified: Date.now(),
+      };
+      localStorage.setItem("studio_session", JSON.stringify(session));
+    }
+  }, [imageUrl, originalImage, history]);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("studio_session");
+    if (saved) {
+      try {
+        const session = JSON.parse(saved);
+        if (session.original && session.current) {
+          setPendingSession(session);
+          setIsRestoreModalOpen(true);
+        }
+      } catch (e) {
+        console.error("Failed to parse saved session", e);
+      }
+    }
+  }, []);
+
+  const restoreSession = () => {
+    if (pendingSession) {
+      setOriginalImage(pendingSession.original);
+      setCurrentImage(pendingSession.current);
+      setHistory(pendingSession.history);
+      setIsRestoreModalOpen(false);
+    }
+  };
 
   // Handle keyboard for space-pan
   useEffect(() => {
@@ -465,6 +600,7 @@ export default function ImageEditor() {
           imgCtx.restore();
         }
       }
+      pushHistory();
     }
     setIsDragging(false);
   };
@@ -492,11 +628,21 @@ export default function ImageEditor() {
   };
 
   const handleUndo = () => {
-    console.log("Undo clicked");
+    if (history.currentIndex > 0) {
+      const prevIndex = history.currentIndex - 1;
+      const snapshot = history.snapshots[prevIndex];
+      loadSnapshot(snapshot);
+      setHistory((prev) => ({ ...prev, currentIndex: prevIndex }));
+    }
   };
 
   const handleRedo = () => {
-    console.log("Redo clicked");
+    if (history.currentIndex < history.snapshots.length - 1) {
+      const nextIndex = history.currentIndex + 1;
+      const snapshot = history.snapshots[nextIndex];
+      loadSnapshot(snapshot);
+      setHistory((prev) => ({ ...prev, currentIndex: nextIndex }));
+    }
   };
 
   const handleSaveClick = () => {
@@ -526,11 +672,16 @@ export default function ImageEditor() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pushHistory();
   };
 
   const handleReset = () => {
     if (!originalImage) return;
-    handleClearAll();
+    const canvas = drawingCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
     setSelection(null);
     setCurrentImage(originalImage);
     // Explicitly redraw to original if currentImage didn't change (e.g. no filters yet)
@@ -540,7 +691,10 @@ export default function ImageEditor() {
       img.onload = () => {
         const ctx = imageCanvasRef.current?.getContext("2d");
         if (ctx) ctx.drawImage(img, 0, 0);
+        pushHistory();
       };
+    } else {
+      // currentImage change will trigger useEffect which does pushHistory
     }
   };
 
@@ -650,6 +804,21 @@ export default function ImageEditor() {
         onSaveClick={handleSaveClick}
         onClearAll={handleClearAll}
         onReset={handleReset}
+        canUndo={history.currentIndex > 0}
+        canRedo={history.currentIndex < history.snapshots.length - 1}
+      />
+
+      <Confirm
+        isOpen={isRestoreModalOpen}
+        onClose={() => {
+          setIsRestoreModalOpen(false);
+          localStorage.removeItem("studio_session");
+        }}
+        onConfirm={restoreSession}
+        title="작업 복구"
+        message="이전에 편집하던 내용이 있습니다. 복구하시겠습니까?"
+        confirmText="복구하기"
+        cancelText="새로 시작"
       />
     </div>
   );

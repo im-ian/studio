@@ -32,3 +32,20 @@ export const drawingSettingsAtom = atom<DrawingSettings>({
   color: "#000000",
   eraseBackground: false,
 });
+
+export interface HistorySnapshot {
+  backgroundImage: string | null;
+  drawingLayer: string | null;
+}
+
+export interface HistoryState {
+  snapshots: HistorySnapshot[];
+  currentIndex: number;
+}
+
+export const historyAtom = atom<HistoryState>({
+  snapshots: [],
+  currentIndex: -1,
+});
+
+export const historyLimitAtom = atom<number>(10);
