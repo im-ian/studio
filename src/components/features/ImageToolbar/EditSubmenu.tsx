@@ -1,4 +1,4 @@
-import IconButton from "../../shared/IconButton";
+import IconButton from "../../ui/IconButton";
 import SubmenuContainer from "./SubmenuContainer";
 
 export default function EditSubmenu({ isExiting }: { isExiting?: boolean }) {

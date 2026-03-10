@@ -15,7 +15,7 @@ import {
   selectionAtom,
 } from "../../store/imageAtoms";
 import { colors, spacing } from "../../tokens.stylex";
-import Confirm from "../shared/Confirm";
+import Confirm from "../ui/Confirm";
 import ImageToolbar from "./ImageToolbar";
 
 const marchingAnts = stylex.keyframes({

@@ -19,8 +19,8 @@ import {
   type ToolType,
 } from "../../../store/imageAtoms";
 import { colors, fontSize, spacing } from "../../../tokens.stylex";
-import Confirm from "../../shared/Confirm";
-import IconButton from "../../shared/IconButton";
+import Confirm from "../../ui/Confirm";
+import IconButton from "../../ui/IconButton";
 import DrawSubmenu from "./DrawSubmenu";
 import EditSubmenu from "./EditSubmenu";
 import FilterSubmenu from "./FilterSubmenu";

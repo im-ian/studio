@@ -6,10 +6,10 @@ import type {
   DrawingToolType,
 } from "../../../store/imageAtoms";
 import { colors, fontSize, radius, spacing } from "../../../tokens.stylex";
-import CircleButton from "../../shared/CircleButton";
-import IconButton from "../../shared/IconButton";
-import Range from "../../shared/Range";
-import Toggle from "../../shared/Toggle";
+import CircleButton from "../../ui/CircleButton";
+import IconButton from "../../ui/IconButton";
+import Range from "../../ui/Range";
+import Toggle from "../../ui/Toggle";
 import SubmenuContainer from "./SubmenuContainer";
 
 const styles = stylex.create({
