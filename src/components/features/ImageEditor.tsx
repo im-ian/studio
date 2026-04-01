@@ -5,19 +5,29 @@ import { Crosshair } from "react-feather";
 
 import {
   activeToolAtom,
+  applySelectionClip,
+  computeSelectionOutlinePath,
   currentImageAtom,
   drawingSettingsAtom,
+  getEffectiveRects,
   type HistorySnapshot,
   type HistoryState,
+  hasSelection,
   historyAtom,
   historyLimitAtom,
   originalImageAtom,
+  type SelectionMode,
+  type SelectionRect,
+  type SelectionState,
   selectionAtom,
 } from "../../store/imageAtoms";
 import { colors, spacing } from "../../tokens.stylex";
 import Confirm from "../ui/Confirm";
 import ImageToolbar from "./ImageToolbar";
 
+// ---------------------------------------------------------------------------
+// Marching-ants keyframe (unchanged)
+// ---------------------------------------------------------------------------
 const marchingAnts = stylex.keyframes({
   "0%": { backgroundPosition: "0 0, 0 100%, 0 0, 100% 0" },
   "100%": { backgroundPosition: "20px 0, -20px 100%, 0 -20px, 100% 20px" },
@@ -103,28 +113,6 @@ const styles = stylex.create({
     height: "100%",
     pointerEvents: "none",
   },
-  selectionOverlay: {
-    position: "absolute",
-    pointerEvents: "none",
-    zIndex: 10,
-    backgroundImage: `
-      linear-gradient(90deg, #fff 50%, #000 50%),
-      linear-gradient(90deg, #fff 50%, #000 50%),
-      linear-gradient(0deg, #fff 50%, #000 50%),
-      linear-gradient(0deg, #fff 50%, #000 50%)
-    `,
-    backgroundRepeat: "repeat-x, repeat-x, repeat-y, repeat-y",
-    backgroundSize: "10px 1px, 10px 1px, 1px 10px, 1px 10px",
-    backgroundPosition: "0 0, 0 100%, 0 0, 100% 0",
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
-    animationName: marchingAnts,
-    animationDuration: "1s",
-    animationIterationCount: "infinite",
-    animationTimingFunction: "linear",
-  },
   canvasContainer: {
     position: "relative",
     backgroundImage: `
@@ -142,8 +130,94 @@ const styles = stylex.create({
     fontSize: 18,
     fontWeight: 500,
   },
+  // SVG overlay that sits on top of the canvas container
+  selectionSvg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+    zIndex: 10,
+    overflow: "visible",
+  },
 });
 
+// ---------------------------------------------------------------------------
+// SelectionOverlay — SVG that renders compound selection with marching ants
+// ---------------------------------------------------------------------------
+interface SelectionOverlayProps {
+  rects: SelectionRect[];
+  displayScale: { x: number; y: number };
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+function SelectionOverlay({
+  rects,
+  displayScale,
+  canvasWidth,
+  canvasHeight,
+}: SelectionOverlayProps) {
+  if (rects.length === 0) return null;
+
+  const hasAddRect = rects.some(
+    (r) => r.mode === "add" && r.width > 0 && r.height > 0,
+  );
+
+  if (!hasAddRect) return null;
+
+  const svgW = canvasWidth / displayScale.x;
+  const svgH = canvasHeight / displayScale.y;
+
+  // Compute the outline path of the compound selection (outer boundary only)
+  const outlinePath = computeSelectionOutlinePath(rects, displayScale);
+
+  return (
+    <svg
+      {...stylex.props(styles.selectionSvg)}
+      viewBox={`0 0 ${svgW} ${svgH}`}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* Marching-ants border on the outer boundary only */}
+      {outlinePath && (
+        <>
+          <path
+            d={outlinePath}
+            fill="none"
+            stroke="white"
+            strokeWidth={1}
+            style={{
+              strokeDasharray: "6 4",
+              animation: "march 0.6s linear infinite",
+            }}
+          />
+          <path
+            d={outlinePath}
+            fill="none"
+            stroke="black"
+            strokeWidth={1}
+            style={{
+              strokeDasharray: "6 4",
+              strokeDashoffset: 10,
+              animation: "march 0.6s linear infinite",
+            }}
+          />
+        </>
+      )}
+
+      <style>{`
+        @keyframes march {
+          to { stroke-dashoffset: -20; }
+        }
+      `}</style>
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 export default function ImageEditor() {
   const imageUrl = useAtomValue(currentImageAtom);
   const originalImage = useAtomValue(originalImageAtom);
@@ -162,6 +236,8 @@ export default function ImageEditor() {
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
   const [showBrushPreview, setShowBrushPreview] = useState(false);
+  // Track which modifier was held when drag started
+  const pendingModeRef = useRef<SelectionMode>("add");
 
   const [history, setHistory] = useAtom(historyAtom);
   const historyLimit = useAtomValue(historyLimitAtom);
@@ -188,21 +264,12 @@ export default function ImageEditor() {
     };
 
     setHistory((prev) => {
-      // If we are undid some steps and now making a new action,
-      // we should remove the "forward" history.
       const newSnapshots = [
         ...prev.snapshots.slice(0, prev.currentIndex + 1),
         snapshot,
       ];
-
-      if (newSnapshots.length > historyLimit) {
-        newSnapshots.shift();
-      }
-
-      return {
-        snapshots: newSnapshots,
-        currentIndex: newSnapshots.length - 1,
-      };
+      if (newSnapshots.length > historyLimit) newSnapshots.shift();
+      return { snapshots: newSnapshots, currentIndex: newSnapshots.length - 1 };
     });
   }, [historyLimit, setHistory]);
 
@@ -220,9 +287,8 @@ export default function ImageEditor() {
         img.onload = () => {
           imgCtx?.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
           imgCtx?.drawImage(img, 0, 0);
-          if (snapshot.backgroundImage) {
+          if (snapshot.backgroundImage)
             setCurrentImage(snapshot.backgroundImage);
-          }
         };
       }
 
@@ -263,14 +329,7 @@ export default function ImageEditor() {
       }
 
       if (!imageCanvasRef.current)
-        return {
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-          clientX,
-          clientY,
-        };
+        return { x: 0, y: 0, width: 0, height: 0, clientX, clientY };
 
       const rect = imageCanvasRef.current.getBoundingClientRect();
       const scaleX = imageCanvasRef.current.width / rect.width;
@@ -288,6 +347,9 @@ export default function ImageEditor() {
     [],
   );
 
+  // ---------------------------------------------------------------------------
+  // Image load / resize
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!imageUrl || !imageCanvasRef.current || !drawingCanvasRef.current)
       return;
@@ -310,11 +372,9 @@ export default function ImageEditor() {
         drawingCanvas.height = img.height;
       }
 
-      // Only clear and redraw background, don't touch drawing layer
       imgCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
       imgCtx.drawImage(img, 0, 0);
 
-      // Update scale after image load and canvas sized
       const rect = imageCanvas.getBoundingClientRect();
       if (rect.width > 0) {
         setDisplayScale({
@@ -323,7 +383,6 @@ export default function ImageEditor() {
         });
       }
 
-      // Restore drawing layer if history exists (important for session recovery)
       const currentHistory = historyRef.current;
       if (
         currentHistory.snapshots.length > 0 &&
@@ -344,7 +403,6 @@ export default function ImageEditor() {
           drawCtx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
         }
       } else {
-        // Initial history point if none exists
         setHistory((prev) => {
           if (prev.snapshots.length === 0) {
             const snapshot: HistorySnapshot = {
@@ -359,7 +417,6 @@ export default function ImageEditor() {
     };
   }, [imageUrl, setHistory]);
 
-  // Handle window resize to keep scale accurate
   useEffect(() => {
     const handleResize = () => {
       if (imageCanvasRef.current) {
@@ -376,7 +433,9 @@ export default function ImageEditor() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Save to localStorage
+  // ---------------------------------------------------------------------------
+  // Session persistence
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (imageUrl && history.snapshots.length > 0) {
       const session = {
@@ -389,7 +448,6 @@ export default function ImageEditor() {
     }
   }, [imageUrl, originalImage, history]);
 
-  // Check for existing session on mount
   useEffect(() => {
     const saved = localStorage.getItem("studio_session");
     if (saved) {
@@ -414,7 +472,9 @@ export default function ImageEditor() {
     }
   };
 
-  // Handle keyboard for space-pan
+  // ---------------------------------------------------------------------------
+  // Space-bar panning keyboard handling
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
@@ -423,19 +483,13 @@ export default function ImageEditor() {
         document.activeElement?.tagName !== "INPUT"
       ) {
         setIsSpacePressed(true);
-        // Prevent default spacebar scrolling
-        if (e.target === document.body || e.target === wrapperRef.current) {
+        if (e.target === document.body || e.target === wrapperRef.current)
           e.preventDefault();
-        }
       }
     };
-
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        setIsSpacePressed(false);
-      }
+      if (e.code === "Space") setIsSpacePressed(false);
     };
-
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     return () => {
@@ -444,6 +498,9 @@ export default function ImageEditor() {
     };
   }, [isSpacePressed]);
 
+  // ---------------------------------------------------------------------------
+  // Pointer handlers
+  // ---------------------------------------------------------------------------
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     const { x, y, clientX, clientY } = getCoordinates(e);
 
@@ -456,29 +513,49 @@ export default function ImageEditor() {
     if (activeTool !== "select" && activeTool !== "draw") return;
 
     if (activeTool === "select") {
+      // Determine mode from modifier keys
+      const mouseEvent = e as React.MouseEvent;
+      let mode: SelectionMode = "add";
+      if (mouseEvent.shiftKey) {
+        mode = "add";
+      } else if (mouseEvent.altKey) {
+        mode = "subtract";
+      } else {
+        // Plain click without modifier: replace existing selection
+        // We do this by resetting rects and starting fresh in "add" mode
+        setSelection((prev: SelectionState) => ({
+          ...prev,
+          rects: [],
+          pendingRect: null,
+          pendingMode: "add",
+        }));
+      }
+
+      pendingModeRef.current = mode;
       setStartPos({ x, y });
       setIsDragging(true);
-      setSelection({ x, y, width: 0, height: 0 });
+
+      setSelection((prev: SelectionState) => ({
+        ...prev,
+        pendingRect: { x, y, width: 0, height: 0 },
+        pendingMode: mode,
+      }));
     } else if (activeTool === "draw" && drawingSettings.selectedSubTool) {
       setIsDragging(true);
       const ctx = drawingCanvasRef.current?.getContext("2d");
       if (ctx) {
-        ctx.save(); // Save initial state for clipping
-
-        // Setup drawing styles
+        ctx.save();
         ctx.strokeStyle =
           drawingSettings.selectedSubTool === "eraser"
             ? "rgba(0,0,0,1)"
             : drawingSettings.color;
         const currentSize = currentBrushSize;
-
         ctx.lineWidth = currentSize;
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
 
         if (drawingSettings.selectedSubTool === "eraser") {
           ctx.globalCompositeOperation = "destination-out";
-          // If erasing background, also setup on image canvas
           if (drawingSettings.eraseBackground) {
             const imgCtx = imageCanvasRef.current?.getContext("2d");
             if (imgCtx) {
@@ -487,16 +564,8 @@ export default function ImageEditor() {
               imgCtx.lineWidth = currentSize;
               imgCtx.lineCap = "round";
               imgCtx.lineJoin = "round";
-              // Apply selection clipping to background too if needed
-              if (selection && selection.width > 0 && selection.height > 0) {
-                imgCtx.beginPath();
-                imgCtx.rect(
-                  selection.x,
-                  selection.y,
-                  selection.width,
-                  selection.height,
-                );
-                imgCtx.clip();
+              if (hasSelection(selection)) {
+                applySelectionClip(imgCtx, selection.rects);
               }
               imgCtx.beginPath();
               imgCtx.moveTo(x, y);
@@ -512,14 +581,10 @@ export default function ImageEditor() {
           }
         }
 
-        // Selection masking
-        if (selection && selection.width > 0 && selection.height > 0) {
-          ctx.beginPath();
-          ctx.rect(selection.x, selection.y, selection.width, selection.height);
-          ctx.clip();
+        if (hasSelection(selection)) {
+          applySelectionClip(ctx, selection.rects);
         }
 
-        // Start drawing path
         ctx.beginPath();
         ctx.moveTo(x, y);
       }
@@ -545,16 +610,7 @@ export default function ImageEditor() {
 
       setMouseCanvasPos({ x: currentX, y: currentY });
 
-      if (
-        !isDragging ||
-        !drawingCanvasRef.current ||
-        (activeTool !== "select" && activeTool !== "draw")
-      )
-        return;
-
-      setMouseCanvasPos({ x: currentX, y: currentY });
-
-      if (isSpacePressed) {
+      if (isSpacePressed && isDragging) {
         const dx = clientX - lastMousePos.x;
         const dy = clientY - lastMousePos.y;
         setPanOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }));
@@ -562,23 +618,27 @@ export default function ImageEditor() {
         return;
       }
 
+      if (!isDragging) return;
+
       if (activeTool === "select") {
         const constrainedX = Math.max(0, Math.min(currentX, canvasWidth));
         const constrainedY = Math.max(0, Math.min(currentY, canvasHeight));
 
-        const x = Math.min(startPos.x, constrainedX);
-        const y = Math.min(startPos.y, constrainedY);
-        const width = Math.abs(startPos.x - constrainedX);
-        const height = Math.abs(startPos.y - constrainedY);
+        const rx = Math.min(startPos.x, constrainedX);
+        const ry = Math.min(startPos.y, constrainedY);
+        const rw = Math.abs(startPos.x - constrainedX);
+        const rh = Math.abs(startPos.y - constrainedY);
 
-        setSelection({ x, y, width, height });
+        setSelection((prev: SelectionState) => ({
+          ...prev,
+          pendingRect: { x: rx, y: ry, width: rw, height: rh },
+        }));
       } else if (activeTool === "draw") {
-        const ctx = drawingCanvasRef.current.getContext("2d");
+        const ctx = drawingCanvasRef.current?.getContext("2d");
         if (ctx) {
           ctx.lineTo(currentX, currentY);
           ctx.stroke();
 
-          // Also stroke background if erasing background
           if (
             drawingSettings.selectedSubTool === "eraser" &&
             drawingSettings.eraseBackground
@@ -605,30 +665,40 @@ export default function ImageEditor() {
   );
 
   const handleEnd = () => {
-    if (activeTool === "select" && selection) {
-      if (selection.width < 5 && selection.height < 5) {
-        setSelection(null);
-      }
+    if (activeTool === "select") {
+      setSelection((prev: SelectionState) => {
+        if (!prev.pendingRect) return { ...prev, pendingRect: null };
+
+        const { pendingRect, pendingMode } = prev;
+
+        // Discard tiny drags (treat as click = clear selection)
+        if (pendingRect.width < 5 && pendingRect.height < 5) {
+          return { rects: [], pendingRect: null, pendingMode: "add" };
+        }
+
+        const committed: SelectionRect = { ...pendingRect, mode: pendingMode };
+        return {
+          rects: [...prev.rects, committed],
+          pendingRect: null,
+          pendingMode: "add",
+        };
+      });
     }
 
     if (activeTool === "draw" && isDragging) {
       const ctx = drawingCanvasRef.current?.getContext("2d");
-      if (ctx) {
-        ctx.restore(); // Restore context state
-      }
+      if (ctx) ctx.restore();
 
-      // Restore background context if erased
       if (
         drawingSettings.selectedSubTool === "eraser" &&
         drawingSettings.eraseBackground
       ) {
         const imgCtx = imageCanvasRef.current?.getContext("2d");
-        if (imgCtx) {
-          imgCtx.restore();
-        }
+        if (imgCtx) imgCtx.restore();
       }
       pushHistory();
     }
+
     setIsDragging(false);
   };
 
@@ -651,15 +721,14 @@ export default function ImageEditor() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape" || e.key === "Backspace") {
-      setSelection(null);
+      setSelection({ rects: [], pendingRect: null, pendingMode: "add" });
     }
   };
 
   const handleUndo = () => {
     if (history.currentIndex > 0) {
       const prevIndex = history.currentIndex - 1;
-      const snapshot = history.snapshots[prevIndex];
-      loadSnapshot(snapshot);
+      loadSnapshot(history.snapshots[prevIndex]);
       setHistory((prev) => ({ ...prev, currentIndex: prevIndex }));
     }
   };
@@ -667,26 +736,20 @@ export default function ImageEditor() {
   const handleRedo = () => {
     if (history.currentIndex < history.snapshots.length - 1) {
       const nextIndex = history.currentIndex + 1;
-      const snapshot = history.snapshots[nextIndex];
-      loadSnapshot(snapshot);
+      loadSnapshot(history.snapshots[nextIndex]);
       setHistory((prev) => ({ ...prev, currentIndex: nextIndex }));
     }
   };
 
   const handleSaveClick = () => {
     if (!imageCanvasRef.current || !drawingCanvasRef.current) return;
-
     const canvas = document.createElement("canvas");
     canvas.width = imageCanvasRef.current.width;
     canvas.height = imageCanvasRef.current.height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
-    // Draw background image
     ctx.drawImage(imageCanvasRef.current, 0, 0);
-    // Draw drawings on top
     ctx.drawImage(drawingCanvasRef.current, 0, 0);
-
     const dataUrl = canvas.toDataURL("image/png");
     const link = document.createElement("a");
     link.download = "studio-edit.png";
@@ -710,9 +773,8 @@ export default function ImageEditor() {
       const ctx = canvas.getContext("2d");
       ctx?.clearRect(0, 0, canvas.width, canvas.height);
     }
-    setSelection(null);
+    setSelection({ rects: [], pendingRect: null, pendingMode: "add" });
     setCurrentImage(originalImage);
-    // Explicitly redraw to original if currentImage didn't change (e.g. no filters yet)
     if (imageUrl === originalImage && imageCanvasRef.current) {
       const img = new Image();
       img.src = originalImage;
@@ -721,10 +783,13 @@ export default function ImageEditor() {
         if (ctx) ctx.drawImage(img, 0, 0);
         pushHistory();
       };
-    } else {
-      // currentImage change will trigger useEffect which does pushHistory
     }
   };
+
+  // Derive effective rects for the SVG overlay (committed + pending)
+  const effectiveRects = getEffectiveRects(selection);
+  const canvasWidth = imageCanvasRef.current?.width ?? 0;
+  const canvasHeight = imageCanvasRef.current?.height ?? 0;
 
   return (
     <div {...stylex.props(styles.container)}>
@@ -782,18 +847,17 @@ export default function ImageEditor() {
                   ref={drawingCanvasRef}
                   {...stylex.props(styles.drawingCanvas)}
                 />
-              </div>
-              {selection && (
-                <div
-                  {...stylex.props(styles.selectionOverlay)}
-                  style={{
-                    left: selection.x / displayScale.x,
-                    top: selection.y / displayScale.y,
-                    width: selection.width / displayScale.x,
-                    height: selection.height / displayScale.y,
-                  }}
+
+                {/* Compound selection overlay */}
+                <SelectionOverlay
+                  rects={effectiveRects}
+                  displayScale={displayScale}
+                  canvasWidth={canvasWidth}
+                  canvasHeight={canvasHeight}
                 />
-              )}
+              </div>
+
+              {/* Brush preview circle */}
               {showBrushPreview &&
                 activeTool === "draw" &&
                 drawingSettings.selectedSubTool && (
@@ -815,6 +879,7 @@ export default function ImageEditor() {
                   />
                 )}
             </div>
+
             {(panOffset.x !== 0 || panOffset.y !== 0) && (
               <button
                 type="button"
@@ -826,6 +891,7 @@ export default function ImageEditor() {
               </button>
             )}
           </div>
+
           <ImageToolbar
             onUndo={handleUndo}
             onRedo={handleRedo}
