@@ -82,11 +82,15 @@ export const historyLimitAtom = atom<number>(10);
 
 /**
  * Returns true if the committed rects produce a non-empty visible area.
+ * Accounts for subtract rects that may fully cancel out add rects.
  */
 export function hasSelection(state: SelectionState): boolean {
-  return state.rects.some(
-    (r) => r.mode === "add" && r.width > 0 && r.height > 0,
-  );
+  if (!state.rects.some((r) => r.mode === "add" && r.width > 0 && r.height > 0))
+    return false;
+
+  const result = computeSelectionGrid(state.rects, { x: 1, y: 1 });
+  if (!result) return false;
+  return result.grid.some((row) => row.some((cell) => cell));
 }
 
 /**
@@ -120,8 +124,8 @@ export function getSelectionBoundingBox(
  * Applies the committed selection rects as a canvas clip path.
  * Call this inside a `ctx.save() … ctx.restore()` block before drawing.
  *
- * Uses the "evenodd" fill rule so subtract rects punch holes correctly when
- * they overlap with add rects.
+ * Uses the sweep-line grid to resolve add/subtract ordering correctly,
+ * then clips to only the grid cells that are actually selected.
  */
 export function applySelectionClip(
   ctx: CanvasRenderingContext2D,
@@ -129,11 +133,34 @@ export function applySelectionClip(
 ): void {
   if (rects.length === 0) return;
 
+  const scale = { x: 1, y: 1 };
+  const result = computeSelectionGrid(rects, scale);
+  if (!result) return;
+
+  const { grid, sortedX, sortedY } = result;
+
+  const rows = grid.length;
+  const cols = grid[0].length;
+
+  let hasCell = false;
   ctx.beginPath();
-  for (const r of rects) {
-    ctx.rect(r.x, r.y, r.width, r.height);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c]) {
+        hasCell = true;
+        ctx.rect(
+          sortedX[c],
+          sortedY[r],
+          sortedX[c + 1] - sortedX[c],
+          sortedY[r + 1] - sortedY[r],
+        );
+      }
+    }
   }
-  ctx.clip("evenodd");
+  // Don't clip to an empty region — that would block all drawing.
+  if (hasCell) {
+    ctx.clip("nonzero");
+  }
 }
 
 /**
@@ -155,44 +182,39 @@ export function getEffectiveRects(state: SelectionState): SelectionRect[] {
 }
 
 // ---------------------------------------------------------------------------
-// Compute the outline path of the compound selection
+// Shared grid computation for compound selection
 // ---------------------------------------------------------------------------
 
+interface SelectionGrid {
+  grid: boolean[][];
+  sortedX: number[];
+  sortedY: number[];
+}
+
 /**
- * Computes an SVG path string representing only the outer boundary of the
- * compound selection (union of add rects minus subtract rects).
+ * Builds a sweep-line grid that resolves the compound selection into a 2D
+ * boolean array. Each cell is true if it belongs to the final selected region,
+ * respecting the order of add/subtract operations.
  *
- * Uses a sweep-line grid approach:
- * 1. Collect all unique x/y coordinates to form a grid of cells.
- * 2. Determine which cells are "inside" the selection.
- * 3. Extract boundary edges between inside and outside cells.
- * 4. Chain edges into continuous closed loops for smooth marching ants.
+ * `scale` maps rect pixel-coordinates to the target coordinate space
+ * (e.g. displayScale for SVG, {x:1,y:1} for canvas).
  */
-export function computeSelectionOutlinePath(
+function computeSelectionGrid(
   rects: SelectionRect[],
-  displayScale: { x: number; y: number },
-): string {
-  if (rects.length === 0) return "";
+  scale: { x: number; y: number },
+): SelectionGrid | null {
+  const valid = rects.filter((r) => r.width > 0 && r.height > 0);
+  if (valid.length === 0) return null;
+  if (!valid.some((r) => r.mode === "add")) return null;
 
-  const addRects = rects.filter(
-    (r) => r.mode === "add" && r.width > 0 && r.height > 0,
-  );
-  const subRects = rects.filter(
-    (r) => r.mode === "subtract" && r.width > 0 && r.height > 0,
-  );
-
-  if (addRects.length === 0) return "";
-
-  // 1. Collect unique coordinates in display-space
-  const allRects = [...addRects, ...subRects];
   const xSet = new Set<number>();
   const ySet = new Set<number>();
 
-  for (const r of allRects) {
-    const x = r.x / displayScale.x;
-    const y = r.y / displayScale.y;
-    const w = r.width / displayScale.x;
-    const h = r.height / displayScale.y;
+  for (const r of valid) {
+    const x = r.x / scale.x;
+    const y = r.y / scale.y;
+    const w = r.width / scale.x;
+    const h = r.height / scale.y;
     xSet.add(x);
     xSet.add(x + w);
     ySet.add(y);
@@ -204,9 +226,8 @@ export function computeSelectionOutlinePath(
 
   const cols = sortedX.length - 1;
   const rows = sortedY.length - 1;
-  if (cols <= 0 || rows <= 0) return "";
+  if (cols <= 0 || rows <= 0) return null;
 
-  // 2. Build grid: cell [row][col] is true if inside selection
   const grid: boolean[][] = Array.from({ length: rows }, () =>
     Array(cols).fill(false),
   );
@@ -216,15 +237,13 @@ export function computeSelectionOutlinePath(
       const cx = (sortedX[c] + sortedX[c + 1]) / 2;
       const cy = (sortedY[r] + sortedY[r + 1]) / 2;
 
-      // Process rects in order so that later operations override earlier ones.
-      // e.g. add → subtract → add correctly re-adds the subtracted region.
       let inside = false;
       for (const rect of rects) {
         if (rect.width <= 0 || rect.height <= 0) continue;
-        const rx = rect.x / displayScale.x;
-        const ry = rect.y / displayScale.y;
-        const rw = rect.width / displayScale.x;
-        const rh = rect.height / displayScale.y;
+        const rx = rect.x / scale.x;
+        const ry = rect.y / scale.y;
+        const rw = rect.width / scale.x;
+        const rh = rect.height / scale.y;
         if (cx >= rx && cx <= rx + rw && cy >= ry && cy <= ry + rh) {
           inside = rect.mode === "add";
         }
@@ -233,7 +252,29 @@ export function computeSelectionOutlinePath(
     }
   }
 
-  // 3. Extract boundary edges
+  return { grid, sortedX, sortedY };
+}
+
+// ---------------------------------------------------------------------------
+// Compute the outline path of the compound selection
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes an SVG path string representing only the outer boundary of the
+ * compound selection (union of add rects minus subtract rects).
+ */
+export function computeSelectionOutlinePath(
+  rects: SelectionRect[],
+  displayScale: { x: number; y: number },
+): string {
+  const result = computeSelectionGrid(rects, displayScale);
+  if (!result) return "";
+
+  const { grid, sortedX, sortedY } = result;
+  const rows = grid.length;
+  const cols = grid[0].length;
+
+  // Extract boundary edges
   //    Each edge is a horizontal or vertical segment between an inside and
   //    outside cell (or at the grid border).
   type Edge = { x1: number; y1: number; x2: number; y2: number };
