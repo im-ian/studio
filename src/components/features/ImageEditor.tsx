@@ -237,6 +237,7 @@ export default function ImageEditor() {
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawSnapshotRef = useRef<ImageData | null>(null);
+  const skipImageLoadRef = useRef(false);
   const [displayScale, setDisplayScale] = useState({ x: 1, y: 1 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -370,6 +371,10 @@ export default function ImageEditor() {
   // Image load / resize
   // ---------------------------------------------------------------------------
   useEffect(() => {
+    if (skipImageLoadRef.current) {
+      skipImageLoadRef.current = false;
+      return;
+    }
     if (!imageUrl || !imageCanvasRef.current || !drawingCanvasRef.current)
       return;
     const imageCanvas = imageCanvasRef.current;
@@ -436,21 +441,34 @@ export default function ImageEditor() {
     };
   }, [imageUrl, setHistory]);
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (imageCanvasRef.current) {
-        const rect = imageCanvasRef.current.getBoundingClientRect();
-        if (rect.width > 0) {
-          setDisplayScale({
-            x: imageCanvasRef.current.width / rect.width,
-            y: imageCanvasRef.current.height / rect.height,
-          });
-        }
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+  // Keep displayScale always in sync via ResizeObserver
+  const updateDisplayScale = useCallback(() => {
+    const canvas = imageCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      setDisplayScale({
+        x: canvas.width / rect.width,
+        y: canvas.height / rect.height,
+      });
+    }
   }, []);
+
+  useEffect(() => {
+    const canvas = imageCanvasRef.current;
+    if (!canvas) return;
+
+    const observer = new ResizeObserver(() => {
+      updateDisplayScale();
+    });
+    observer.observe(canvas);
+    window.addEventListener("resize", updateDisplayScale);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateDisplayScale);
+    };
+  }, [updateDisplayScale]);
 
   // ---------------------------------------------------------------------------
   // Session persistence
@@ -1359,8 +1377,9 @@ export default function ImageEditor() {
       imgCanvas.width = w;
       imgCanvas.height = h;
       const imgCtx = imgCanvas.getContext("2d")!;
-      imgCtx.clearRect(0, 0, w, h);
+      imgCtx.save();
       transform(imgTemp, imgCtx, imgCanvas);
+      imgCtx.restore();
 
       // Transform drawing canvas
       const drawTemp = document.createElement("canvas");
@@ -1371,19 +1390,27 @@ export default function ImageEditor() {
       drawCanvas.width = w;
       drawCanvas.height = h;
       const drawCtx = drawCanvas.getContext("2d")!;
-      drawCtx.clearRect(0, 0, w, h);
+      drawCtx.save();
       transform(drawTemp, drawCtx, drawCanvas);
+      drawCtx.restore();
 
-      // Update display scale
-      const rect = imgCanvas.getBoundingClientRect();
-      if (rect.width > 0) {
-        setDisplayScale({ x: w / rect.width, y: h / rect.height });
-      }
+      // Clear selection — old coordinates are invalid after transform
+      setSelection({ rects: [], pendingRect: null, pendingMode: "add" });
+      // Reset pan offset since canvas dimensions changed
+      setPanOffset({ x: 0, y: 0 });
 
-      setCurrentImage(imgCanvas.toDataURL());
+      // Push history first, then update image atom with skip flag
+      // so the image load effect doesn't undo our canvas changes.
       pushHistory();
+      skipImageLoadRef.current = true;
+      setCurrentImage(imgCanvas.toDataURL());
+
+      // Force displayScale recalculation after layout settles
+      requestAnimationFrame(() => {
+        updateDisplayScale();
+      });
     },
-    [pushHistory, setCurrentImage],
+    [pushHistory, setCurrentImage, setSelection, updateDisplayScale],
   );
 
   const handleRotateLeft = useCallback(() => {
@@ -1463,13 +1490,21 @@ export default function ImageEditor() {
 
     // Clear selection and update
     setSelection({ rects: [], pendingRect: null, pendingMode: "add" });
-    const rect = imgCanvas.getBoundingClientRect();
-    if (rect.width > 0) {
-      setDisplayScale({ x: cw / rect.width, y: ch / rect.height });
-    }
-    setCurrentImage(imgCanvas.toDataURL());
+    setPanOffset({ x: 0, y: 0 });
     pushHistory();
-  }, [selection, setSelection, setCurrentImage, pushHistory]);
+    skipImageLoadRef.current = true;
+    setCurrentImage(imgCanvas.toDataURL());
+
+    requestAnimationFrame(() => {
+      updateDisplayScale();
+    });
+  }, [
+    selection,
+    setSelection,
+    setCurrentImage,
+    pushHistory,
+    updateDisplayScale,
+  ]);
 
   const handleResize = useCallback(
     (newWidth: number, newHeight: number) => {

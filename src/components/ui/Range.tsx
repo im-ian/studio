@@ -5,7 +5,7 @@ const styles = stylex.create({
   rangeTrack: {
     position: "relative",
     flex: 1,
-    height: "24px",
+    height: "28px",
     display: "flex",
     alignItems: "center",
     cursor: "pointer",
@@ -13,21 +13,34 @@ const styles = stylex.create({
   },
   rangeLine: {
     width: "100%",
-    height: "4px",
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderRadius: "2px",
+    height: "6px",
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: "3px",
     position: "relative",
+  },
+  rangeFill: {
+    position: "absolute",
+    height: "100%",
+    backgroundColor: "rgba(59, 130, 246, 0.6)",
+    borderRadius: "3px",
+    top: 0,
+    left: 0,
+    overflow: "hidden",
   },
   rangeThumb: {
     position: "absolute",
-    width: "14px",
-    height: "14px",
+    width: "16px",
+    height: "16px",
     backgroundColor: "white",
     borderRadius: "50%",
-    top: "-5px",
-    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-    transform: "translateX(-50%)",
+    top: "50%",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+    transform: "translate(-50%, -50%)",
     pointerEvents: "none",
+    transition: "box-shadow 0.15s ease",
+  },
+  rangeThumbActive: {
+    boxShadow: "0 2px 8px rgba(59, 130, 246, 0.5)",
   },
 });
 
@@ -119,7 +132,14 @@ export default function Range({
     >
       <div {...stylex.props(styles.rangeLine)}>
         <div
-          {...stylex.props(styles.rangeThumb)}
+          {...stylex.props(styles.rangeFill)}
+          style={{ width: `${percentage}%` }}
+        />
+        <div
+          {...stylex.props(
+            styles.rangeThumb,
+            isDragging && styles.rangeThumbActive,
+          )}
           style={{ left: `${percentage}%` }}
         />
       </div>

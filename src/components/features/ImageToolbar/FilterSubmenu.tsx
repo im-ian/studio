@@ -33,6 +33,21 @@ const styles = stylex.create({
     color: "white",
     minWidth: "28px",
   },
+  valueInput: {
+    width: "52px",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    color: "white",
+    fontSize: fontSize.xsmall,
+    padding: "4px 6px",
+    borderRadius: radius.sm,
+    textAlign: "center",
+    outline: "none",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    flexShrink: 0,
+    ":focus": {
+      borderColor: "rgba(59, 130, 246, 0.5)",
+    },
+  },
   applyButton: {
     width: "100%",
     padding: `${spacing.small} ${spacing.small}`,
@@ -62,6 +77,11 @@ const FILTERS: { type: FilterType; label: string }[] = [
   { type: "fade", label: "페이드" },
   { type: "highlight", label: "하이라이트" },
   { type: "shadow", label: "그림자" },
+  { type: "sharpen", label: "샤프닝" },
+  { type: "blur", label: "블러" },
+  { type: "motionBlur", label: "모션 블러" },
+  { type: "grain", label: "노이즈" },
+  { type: "denoise", label: "노이즈 제거" },
 ];
 
 interface FilterSubmenuProps {
@@ -134,7 +154,19 @@ export default function FilterSubmenu({
               onChange={setIntensity}
               aria-label="Filter intensity"
             />
-            <span {...stylex.props(styles.sliderLabel)}>{intensity}%</span>
+            <input
+              type="number"
+              {...stylex.props(styles.valueInput)}
+              value={intensity}
+              min={0}
+              max={100}
+              onChange={(e) => {
+                const num = Number.parseInt(e.target.value, 10);
+                if (!Number.isNaN(num)) {
+                  setIntensity(Math.max(0, Math.min(100, num)));
+                }
+              }}
+            />
           </div>
           <button
             type="button"

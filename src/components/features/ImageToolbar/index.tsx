@@ -10,10 +10,12 @@ import {
   RotateCcw,
   RotateCw,
   Save,
+  Sliders,
 } from "react-feather";
 
 import { useClickOutside } from "../../../hooks/useClickOutside";
 import {
+  type AdjustmentValues,
   activeToolAtom,
   drawingSettingsAtom,
   type FilterType,
@@ -22,6 +24,7 @@ import {
 import { colors, fontSize, spacing } from "../../../tokens.stylex";
 import Confirm from "../../ui/Confirm";
 import IconButton from "../../ui/IconButton";
+import AdjustmentSubmenu from "./AdjustmentSubmenu";
 import DrawSubmenu from "./DrawSubmenu";
 import EditSubmenu from "./EditSubmenu";
 import FilterSubmenu from "./FilterSubmenu";
@@ -77,6 +80,18 @@ interface ImageToolbarProps {
   onApplyFilter?: (filter: FilterType, intensity: number) => void;
   onPreviewFilter?: (filter: FilterType, intensity: number) => void;
   onCancelPreview?: () => void;
+  onPreviewAdjustment?: (values: AdjustmentValues) => void;
+  onApplyAdjustment?: (values: AdjustmentValues) => void;
+  onResetAdjustment?: () => void;
+  onRotateLeft?: () => void;
+  onRotateRight?: () => void;
+  onFlipHorizontal?: () => void;
+  onFlipVertical?: () => void;
+  onCrop?: () => void;
+  onResize?: (width: number, height: number) => void;
+  canvasWidth?: number;
+  canvasHeight?: number;
+  hasSelection?: boolean;
   canUndo?: boolean;
   canRedo?: boolean;
 }
@@ -92,6 +107,18 @@ export default function ImageToolbar({
   onApplyFilter,
   onPreviewFilter,
   onCancelPreview,
+  onPreviewAdjustment,
+  onApplyAdjustment,
+  onResetAdjustment,
+  onRotateLeft,
+  onRotateRight,
+  onFlipHorizontal,
+  onFlipVertical,
+  onCrop,
+  onResize,
+  canvasWidth = 0,
+  canvasHeight = 0,
+  hasSelection = false,
   canUndo = false,
   canRedo = false,
 }: ImageToolbarProps) {
@@ -103,7 +130,19 @@ export default function ImageToolbar({
   const [isSubmenuOpen, setIsSubmenuOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
-  useClickOutside(containerRef, () => setIsSubmenuOpen(false), isSubmenuOpen);
+  useClickOutside(
+    containerRef,
+    () => {
+      if (activeTool === "filter") {
+        onCancelPreview?.();
+      }
+      if (activeTool === "adjust") {
+        onResetAdjustment?.();
+      }
+      setIsSubmenuOpen(false);
+    },
+    isSubmenuOpen,
+  );
 
   useEffect(() => {
     if (activeTool) {
@@ -136,6 +175,13 @@ export default function ImageToolbar({
     if (activeTool === tool) {
       setIsSubmenuOpen(!isSubmenuOpen);
     } else {
+      // Cancel any active previews when switching tools
+      if (activeTool === "filter") {
+        onCancelPreview?.();
+      }
+      if (activeTool === "adjust") {
+        onResetAdjustment?.();
+      }
       setActiveTool(tool);
     }
   };
@@ -157,6 +203,15 @@ export default function ImageToolbar({
             isExiting={isExiting}
           />
         );
+      case "adjust":
+        return (
+          <AdjustmentSubmenu
+            isExiting={isExiting}
+            onPreview={onPreviewAdjustment}
+            onApply={onApplyAdjustment}
+            onReset={onResetAdjustment}
+          />
+        );
       case "filter":
         return (
           <FilterSubmenu
@@ -167,7 +222,20 @@ export default function ImageToolbar({
           />
         );
       case "edit":
-        return <EditSubmenu isExiting={isExiting} />;
+        return (
+          <EditSubmenu
+            isExiting={isExiting}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+            hasSelection={hasSelection}
+            onRotateLeft={onRotateLeft}
+            onRotateRight={onRotateRight}
+            onFlipHorizontal={onFlipHorizontal}
+            onFlipVertical={onFlipVertical}
+            onCrop={onCrop}
+            onResize={onResize}
+          />
+        );
       default:
         return null;
     }
@@ -206,6 +274,14 @@ export default function ImageToolbar({
         >
           <Edit2 size={ICON_SIZE} />
           <span {...stylex.props(styles.label)}>그리기</span>
+        </IconButton>
+        <IconButton
+          isActive={activeTool === "adjust"}
+          onClick={() => handleToolClick("adjust")}
+          aria-label="Adjust"
+        >
+          <Sliders size={ICON_SIZE} />
+          <span {...stylex.props(styles.label)}>보정</span>
         </IconButton>
         <IconButton
           isActive={activeTool === "filter"}

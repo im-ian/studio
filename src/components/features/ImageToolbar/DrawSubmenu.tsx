@@ -70,6 +70,21 @@ const styles = stylex.create({
     color: "white",
     minWidth: "20px",
   },
+  valueInput: {
+    width: "52px",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    color: "white",
+    fontSize: fontSize.xsmall,
+    padding: "4px 6px",
+    borderRadius: radius.sm,
+    textAlign: "center",
+    outline: "none",
+    border: "1px solid rgba(255, 255, 255, 0.1)",
+    flexShrink: 0,
+    ":focus": {
+      borderColor: "rgba(59, 130, 246, 0.5)",
+    },
+  },
   clearButton: {
     width: "100%",
     marginTop: spacing.small,
@@ -185,13 +200,31 @@ export default function DrawSubmenu({
               }}
               aria-label="Brush size"
             />
-            <span {...stylex.props(styles.sliderLabel)}>
-              {drawingSettings.selectedSubTool === "pen"
-                ? drawingSettings.penSize
-                : drawingSettings.selectedSubTool === "brush"
-                  ? drawingSettings.brushSize
-                  : drawingSettings.eraserSize}
-            </span>
+            <input
+              type="number"
+              {...stylex.props(styles.valueInput)}
+              value={
+                drawingSettings.selectedSubTool === "pen"
+                  ? drawingSettings.penSize
+                  : drawingSettings.selectedSubTool === "brush"
+                    ? drawingSettings.brushSize
+                    : drawingSettings.eraserSize
+              }
+              min={1}
+              max={50}
+              onChange={(e) => {
+                const num = Number.parseInt(e.target.value, 10);
+                if (!Number.isNaN(num)) {
+                  const clamped = Math.max(1, Math.min(50, num));
+                  if (drawingSettings.selectedSubTool === "pen")
+                    updateDrawingSettings({ penSize: clamped });
+                  else if (drawingSettings.selectedSubTool === "brush")
+                    updateDrawingSettings({ brushSize: clamped });
+                  else if (drawingSettings.selectedSubTool === "eraser")
+                    updateDrawingSettings({ eraserSize: clamped });
+                }
+              }}
+            />
           </div>
 
           {drawingSettings.selectedSubTool !== "eraser" && (
