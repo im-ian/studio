@@ -6,6 +6,16 @@ export const currentImageAtom = atom<string | null>(null);
 export type ToolType = "select" | "draw" | "filter" | "edit" | null;
 export type DrawingToolType = "pen" | "brush" | "eraser";
 export type SelectionMode = "add" | "subtract";
+export type FilterType =
+  | "grayscale"
+  | "sepia"
+  | "vintage"
+  | "film"
+  | "cool"
+  | "warm"
+  | "fade"
+  | "highlight"
+  | "shadow";
 
 export interface DrawingSettings {
   selectedSubTool: DrawingToolType | null;

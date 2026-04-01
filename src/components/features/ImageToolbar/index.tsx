@@ -16,6 +16,7 @@ import { useClickOutside } from "../../../hooks/useClickOutside";
 import {
   activeToolAtom,
   drawingSettingsAtom,
+  type FilterType,
   type ToolType,
 } from "../../../store/imageAtoms";
 import { colors, fontSize, spacing } from "../../../tokens.stylex";
@@ -73,6 +74,9 @@ interface ImageToolbarProps {
   onSaveClick?: () => void;
   onClearAll?: () => void;
   onReset?: () => void;
+  onApplyFilter?: (filter: FilterType, intensity: number) => void;
+  onPreviewFilter?: (filter: FilterType, intensity: number) => void;
+  onCancelPreview?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
 }
@@ -85,6 +89,9 @@ export default function ImageToolbar({
   onSaveClick,
   onClearAll,
   onReset,
+  onApplyFilter,
+  onPreviewFilter,
+  onCancelPreview,
   canUndo = false,
   canRedo = false,
 }: ImageToolbarProps) {
@@ -151,7 +158,14 @@ export default function ImageToolbar({
           />
         );
       case "filter":
-        return <FilterSubmenu isExiting={isExiting} />;
+        return (
+          <FilterSubmenu
+            isExiting={isExiting}
+            onApplyFilter={onApplyFilter}
+            onPreviewFilter={onPreviewFilter}
+            onCancelPreview={onCancelPreview}
+          />
+        );
       case "edit":
         return <EditSubmenu isExiting={isExiting} />;
       default:

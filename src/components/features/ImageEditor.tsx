@@ -9,6 +9,7 @@ import {
   computeSelectionOutlinePath,
   currentImageAtom,
   drawingSettingsAtom,
+  type FilterType,
   getEffectiveRects,
   type HistorySnapshot,
   type HistoryState,
@@ -853,6 +854,157 @@ export default function ImageEditor() {
     }
   };
 
+  const filterSnapshotRef = useRef<ImageData | null>(null);
+
+  const applyFilterToCanvas = useCallback(
+    (source: ImageData, filter: FilterType, intensity: number) => {
+      const canvas = imageCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const t = intensity / 100;
+      const imageData = new ImageData(
+        new Uint8ClampedArray(source.data),
+        source.width,
+        source.height,
+      );
+      const { data } = imageData;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        let nr = r;
+        let ng = g;
+        let nb = b;
+
+        switch (filter) {
+          case "grayscale": {
+            const gray = r * 0.299 + g * 0.587 + b * 0.114;
+            nr = gray;
+            ng = gray;
+            nb = gray;
+            break;
+          }
+          case "sepia": {
+            nr = Math.min(255, r * 0.393 + g * 0.769 + b * 0.189);
+            ng = Math.min(255, r * 0.349 + g * 0.686 + b * 0.168);
+            nb = Math.min(255, r * 0.272 + g * 0.534 + b * 0.131);
+            break;
+          }
+          case "vintage": {
+            nr = Math.min(255, r * 0.62 + g * 0.32 + b * 0.16 + 20);
+            ng = Math.min(255, r * 0.22 + g * 0.7 + b * 0.08 + 10);
+            nb = Math.min(255, r * 0.16 + g * 0.24 + b * 0.44 + 10);
+            break;
+          }
+          case "film": {
+            const gray = r * 0.299 + g * 0.587 + b * 0.114;
+            nr = Math.min(255, r * 0.75 + gray * 0.25 + 10);
+            ng = Math.min(255, g * 0.75 + gray * 0.25 + 15);
+            nb = Math.min(255, b * 0.7 + gray * 0.3 + 10);
+            nr = nr * 0.85 + 20;
+            ng = ng * 0.85 + 20;
+            nb = nb * 0.85 + 20;
+            break;
+          }
+          case "cool": {
+            nr = r * 0.9;
+            ng = g;
+            nb = Math.min(255, b * 1.15 + 10);
+            break;
+          }
+          case "warm": {
+            nr = Math.min(255, r * 1.12 + 8);
+            ng = Math.min(255, g * 1.02 + 4);
+            nb = b * 0.9;
+            break;
+          }
+          case "fade": {
+            nr = r * 0.8 + 50;
+            ng = g * 0.8 + 50;
+            nb = b * 0.8 + 50;
+            break;
+          }
+          case "highlight": {
+            const lum = (r + g + b) / 3;
+            const boost = lum > 100 ? (lum - 100) / 155 : 0;
+            nr = Math.min(255, r + boost * 60);
+            ng = Math.min(255, g + boost * 60);
+            nb = Math.min(255, b + boost * 60);
+            break;
+          }
+          case "shadow": {
+            const luminance = (r + g + b) / 3;
+            const darken = luminance < 160 ? (160 - luminance) / 160 : 0;
+            nr = Math.max(0, r - darken * 50);
+            ng = Math.max(0, g - darken * 50);
+            nb = Math.max(0, b - darken * 50);
+            break;
+          }
+        }
+
+        data[i] = Math.round(r + (nr - r) * t);
+        data[i + 1] = Math.round(g + (ng - g) * t);
+        data[i + 2] = Math.round(b + (nb - b) * t);
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    },
+    [],
+  );
+
+  const handlePreviewFilter = useCallback(
+    (filter: FilterType, intensity: number) => {
+      const canvas = imageCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // Save original pixels on first preview call
+      if (!filterSnapshotRef.current) {
+        filterSnapshotRef.current = ctx.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+      }
+
+      applyFilterToCanvas(filterSnapshotRef.current, filter, intensity);
+    },
+    [applyFilterToCanvas],
+  );
+
+  const handleCancelPreview = useCallback(() => {
+    const canvas = imageCanvasRef.current;
+    if (!canvas || !filterSnapshotRef.current) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.putImageData(filterSnapshotRef.current, 0, 0);
+    filterSnapshotRef.current = null;
+  }, []);
+
+  const handleApplyFilter = useCallback(
+    (filter: FilterType, intensity: number) => {
+      const canvas = imageCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // If we have a snapshot, apply from original; otherwise apply from current
+      const source =
+        filterSnapshotRef.current ??
+        ctx.getImageData(0, 0, canvas.width, canvas.height);
+      applyFilterToCanvas(source, filter, intensity);
+      filterSnapshotRef.current = null;
+      pushHistory();
+    },
+    [applyFilterToCanvas, pushHistory],
+  );
+
   // Derive effective rects for the SVG overlay (committed + pending)
   const effectiveRects = getEffectiveRects(selection);
   const canvasWidth = imageCanvasRef.current?.width ?? 0;
@@ -965,6 +1117,9 @@ export default function ImageEditor() {
             onSaveClick={handleSaveClick}
             onClearAll={handleClearAll}
             onReset={handleReset}
+            onApplyFilter={handleApplyFilter}
+            onPreviewFilter={handlePreviewFilter}
+            onCancelPreview={handleCancelPreview}
             canUndo={history.currentIndex > 0}
             canRedo={history.currentIndex < history.snapshots.length - 1}
           />
