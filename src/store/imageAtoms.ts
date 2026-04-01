@@ -48,7 +48,7 @@ export const selectionAtom = atom<SelectionState>({
   pendingMode: "add",
 });
 
-export const activeToolAtom = atom<ToolType>(null);
+export const activeToolAtom = atom<ToolType>("select");
 
 export const drawingSettingsAtom = atom<DrawingSettings>({
   selectedSubTool: null,
