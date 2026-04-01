@@ -32,7 +32,7 @@ const styles = stylex.create({
     width: "100%",
   },
   sliderLabel: {
-    fontSize: fontSize.xxsmall,
+    fontSize: fontSize.small,
     color: "white",
     minWidth: "28px",
   },
@@ -40,7 +40,7 @@ const styles = stylex.create({
     width: "52px",
     backgroundColor: "rgba(0, 0, 0, 0.2)",
     color: "white",
-    fontSize: fontSize.xsmall,
+    fontSize: fontSize.small,
     padding: `4px 6px`,
     borderRadius: radius.sm,
     textAlign: "center",
