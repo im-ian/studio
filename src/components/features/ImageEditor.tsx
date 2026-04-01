@@ -4,13 +4,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Crosshair } from "react-feather";
 
 import {
+  type AdjustmentValues,
   activeToolAtom,
   applySelectionClip,
+  cacheTTLAtom,
   computeSelectionOutlinePath,
   currentImageAtom,
+  DEFAULT_ADJUSTMENTS,
   drawingSettingsAtom,
   type FilterType,
   getEffectiveRects,
+  getSelectionBoundingBox,
   type HistorySnapshot,
   type HistoryState,
   hasSelection,
@@ -244,6 +248,7 @@ export default function ImageEditor() {
 
   const [history, setHistory] = useAtom(historyAtom);
   const historyLimit = useAtomValue(historyLimitAtom);
+  const cacheTTL = useAtomValue(cacheTTLAtom);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [pendingSession, setPendingSession] = useState<{
     original: string;
@@ -273,6 +278,17 @@ export default function ImageEditor() {
       ];
       if (newSnapshots.length > historyLimit) newSnapshots.shift();
       return { snapshots: newSnapshots, currentIndex: newSnapshots.length - 1 };
+    });
+  }, [historyLimit, setHistory]);
+
+  // Trim history when limit is reduced below current snapshot count
+  useEffect(() => {
+    setHistory((prev) => {
+      if (prev.snapshots.length <= historyLimit) return prev;
+      const excess = prev.snapshots.length - historyLimit;
+      const newSnapshots = prev.snapshots.slice(excess);
+      const newIndex = Math.max(0, prev.currentIndex - excess);
+      return { snapshots: newSnapshots, currentIndex: newIndex };
     });
   }, [historyLimit, setHistory]);
 
@@ -456,6 +472,15 @@ export default function ImageEditor() {
     if (saved) {
       try {
         const session = JSON.parse(saved);
+        // Auto-delete expired cache
+        if (cacheTTL > 0 && session.lastModified) {
+          const elapsed = Date.now() - session.lastModified;
+          const ttlMs = cacheTTL * 24 * 60 * 60 * 1000;
+          if (elapsed > ttlMs) {
+            localStorage.removeItem("studio_session");
+            return;
+          }
+        }
         if (session.original && session.current) {
           setPendingSession(session);
           setIsRestoreModalOpen(true);
@@ -464,7 +489,7 @@ export default function ImageEditor() {
         console.error("Failed to parse saved session", e);
       }
     }
-  }, []);
+  }, [cacheTTL]);
 
   const restoreSession = () => {
     if (pendingSession) {
@@ -864,11 +889,184 @@ export default function ImageEditor() {
       if (!ctx) return;
 
       const t = intensity / 100;
-      const imageData = new ImageData(
-        new Uint8ClampedArray(source.data),
-        source.width,
-        source.height,
-      );
+      const w = source.width;
+      const h = source.height;
+      const src = source.data;
+
+      // --- Kernel-based filters ---
+      const KERNEL_FILTERS = [
+        "sharpen",
+        "blur",
+        "motionBlur",
+        "grain",
+        "denoise",
+      ] as const;
+
+      if ((KERNEL_FILTERS as readonly string[]).includes(filter)) {
+        const out = new ImageData(new Uint8ClampedArray(src), w, h);
+        const od = out.data;
+
+        switch (filter) {
+          case "sharpen": {
+            // 3x3 unsharp-mask kernel
+            const amount = t * 2;
+            for (let y = 1; y < h - 1; y++) {
+              for (let x = 1; x < w - 1; x++) {
+                const i = (y * w + x) * 4;
+                for (let ch = 0; ch < 3; ch++) {
+                  const center = src[i + ch];
+                  const neighbors =
+                    src[((y - 1) * w + x) * 4 + ch] +
+                    src[((y + 1) * w + x) * 4 + ch] +
+                    src[(y * w + x - 1) * 4 + ch] +
+                    src[(y * w + x + 1) * 4 + ch];
+                  const sharpened = center + (center * 4 - neighbors) * amount;
+                  od[i + ch] = Math.max(
+                    0,
+                    Math.min(255, Math.round(sharpened)),
+                  );
+                }
+              }
+            }
+            break;
+          }
+          case "blur": {
+            // Separable box blur (3-pass ≈ Gaussian)
+            const radius = Math.max(1, Math.round(t * 15));
+            const temp = new Uint8ClampedArray(src);
+            for (let pass = 0; pass < 3; pass++) {
+              const input = pass === 0 ? src : od;
+              // Horizontal pass → temp
+              for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                  let rr = 0,
+                    gg = 0,
+                    bb = 0,
+                    count = 0;
+                  for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = Math.min(w - 1, Math.max(0, x + dx));
+                    const idx = (y * w + nx) * 4;
+                    rr += input[idx];
+                    gg += input[idx + 1];
+                    bb += input[idx + 2];
+                    count++;
+                  }
+                  const idx = (y * w + x) * 4;
+                  temp[idx] = rr / count;
+                  temp[idx + 1] = gg / count;
+                  temp[idx + 2] = bb / count;
+                  temp[idx + 3] = input[idx + 3];
+                }
+              }
+              // Vertical pass → od
+              for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                  let rr = 0,
+                    gg = 0,
+                    bb = 0,
+                    count = 0;
+                  for (let dy = -radius; dy <= radius; dy++) {
+                    const ny = Math.min(h - 1, Math.max(0, y + dy));
+                    const idx = (ny * w + x) * 4;
+                    rr += temp[idx];
+                    gg += temp[idx + 1];
+                    bb += temp[idx + 2];
+                    count++;
+                  }
+                  const idx = (y * w + x) * 4;
+                  od[idx] = rr / count;
+                  od[idx + 1] = gg / count;
+                  od[idx + 2] = bb / count;
+                  od[idx + 3] = temp[idx + 3];
+                }
+              }
+            }
+            // Blend with original
+            for (let i = 0; i < od.length; i += 4) {
+              od[i] = Math.round(src[i] + (od[i] - src[i]) * t);
+              od[i + 1] = Math.round(src[i + 1] + (od[i + 1] - src[i + 1]) * t);
+              od[i + 2] = Math.round(src[i + 2] + (od[i + 2] - src[i + 2]) * t);
+            }
+            break;
+          }
+          case "motionBlur": {
+            const length = Math.max(1, Math.round(t * 25));
+            for (let y = 0; y < h; y++) {
+              for (let x = 0; x < w; x++) {
+                let rr = 0,
+                  gg = 0,
+                  bb = 0,
+                  count = 0;
+                for (let dx = -length; dx <= length; dx++) {
+                  const nx = Math.min(w - 1, Math.max(0, x + dx));
+                  const idx = (y * w + nx) * 4;
+                  rr += src[idx];
+                  gg += src[idx + 1];
+                  bb += src[idx + 2];
+                  count++;
+                }
+                const idx = (y * w + x) * 4;
+                od[idx] = Math.round(src[idx] + (rr / count - src[idx]) * t);
+                od[idx + 1] = Math.round(
+                  src[idx + 1] + (gg / count - src[idx + 1]) * t,
+                );
+                od[idx + 2] = Math.round(
+                  src[idx + 2] + (bb / count - src[idx + 2]) * t,
+                );
+              }
+            }
+            break;
+          }
+          case "grain": {
+            const amount = t * 60;
+            for (let i = 0; i < od.length; i += 4) {
+              const noise = (Math.random() - 0.5) * amount;
+              od[i] = Math.max(0, Math.min(255, src[i] + noise));
+              od[i + 1] = Math.max(0, Math.min(255, src[i + 1] + noise));
+              od[i + 2] = Math.max(0, Math.min(255, src[i + 2] + noise));
+            }
+            break;
+          }
+          case "denoise": {
+            // Mean filter with radius based on intensity
+            const r = Math.max(1, Math.round(t * 3));
+            for (let y = 0; y < h; y++) {
+              for (let x = 0; x < w; x++) {
+                let rr = 0,
+                  gg = 0,
+                  bb = 0,
+                  count = 0;
+                for (let dy = -r; dy <= r; dy++) {
+                  for (let dx = -r; dx <= r; dx++) {
+                    const ny = Math.min(h - 1, Math.max(0, y + dy));
+                    const nx = Math.min(w - 1, Math.max(0, x + dx));
+                    const idx = (ny * w + nx) * 4;
+                    rr += src[idx];
+                    gg += src[idx + 1];
+                    bb += src[idx + 2];
+                    count++;
+                  }
+                }
+                const idx = (y * w + x) * 4;
+                od[idx] = Math.round(src[idx] + (rr / count - src[idx]) * t);
+                od[idx + 1] = Math.round(
+                  src[idx + 1] + (gg / count - src[idx + 1]) * t,
+                );
+                od[idx + 2] = Math.round(
+                  src[idx + 2] + (bb / count - src[idx + 2]) * t,
+                );
+              }
+            }
+            break;
+          }
+        }
+
+        ctx.putImageData(out, 0, 0);
+        return;
+      }
+
+      // --- Per-pixel filters ---
+      const imageData = new ImageData(new Uint8ClampedArray(src), w, h);
       const { data } = imageData;
 
       for (let i = 0; i < data.length; i += 4) {
@@ -1005,10 +1203,292 @@ export default function ImageEditor() {
     [applyFilterToCanvas, pushHistory],
   );
 
+  // ---------------------------------------------------------------------------
+  // Adjustment handlers (보정)
+  // ---------------------------------------------------------------------------
+  const adjustmentSnapshotRef = useRef<ImageData | null>(null);
+
+  const applyAdjustmentsToImageData = useCallback(
+    (source: ImageData, v: AdjustmentValues): ImageData => {
+      const result = new ImageData(
+        new Uint8ClampedArray(source.data),
+        source.width,
+        source.height,
+      );
+      const d = result.data;
+
+      // Pre-compute contrast factor
+      const contrastVal = v.contrast * 2.55;
+      const cf = (259 * (contrastVal + 255)) / (255 * (259 - contrastVal));
+
+      // Pre-compute gamma exponent
+      const gammaExp = 1 / 2 ** (v.gamma / 100);
+
+      for (let i = 0; i < d.length; i += 4) {
+        let r = d[i];
+        let g = d[i + 1];
+        let b = d[i + 2];
+
+        // 1. Brightness
+        r += v.brightness * 2.55;
+        g += v.brightness * 2.55;
+        b += v.brightness * 2.55;
+
+        // 2. Contrast
+        if (v.contrast !== 0) {
+          r = cf * (r - 128) + 128;
+          g = cf * (g - 128) + 128;
+          b = cf * (b - 128) + 128;
+        }
+
+        // 3. Saturation
+        if (v.saturation !== 0) {
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          const sf = 1 + v.saturation / 100;
+          r = gray + (r - gray) * sf;
+          g = gray + (g - gray) * sf;
+          b = gray + (b - gray) * sf;
+        }
+
+        // 4. Warmth (red-blue shift)
+        if (v.warmth !== 0) {
+          r += v.warmth * 0.7;
+          b -= v.warmth * 0.7;
+        }
+
+        // 5. Tint (green-magenta shift)
+        if (v.tint !== 0) {
+          g += v.tint * 0.7;
+        }
+
+        // 6. Gamma
+        if (v.gamma !== 0) {
+          r = 255 * (Math.max(0, r) / 255) ** gammaExp;
+          g = 255 * (Math.max(0, g) / 255) ** gammaExp;
+          b = 255 * (Math.max(0, b) / 255) ** gammaExp;
+        }
+
+        d[i] = Math.max(0, Math.min(255, Math.round(r)));
+        d[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+        d[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+      }
+
+      return result;
+    },
+    [],
+  );
+
+  const handlePreviewAdjustment = useCallback(
+    (values: AdjustmentValues) => {
+      const canvas = imageCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      if (!adjustmentSnapshotRef.current) {
+        adjustmentSnapshotRef.current = ctx.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height,
+        );
+      }
+
+      const adjusted = applyAdjustmentsToImageData(
+        adjustmentSnapshotRef.current,
+        values,
+      );
+      ctx.putImageData(adjusted, 0, 0);
+    },
+    [applyAdjustmentsToImageData],
+  );
+
+  const handleApplyAdjustment = useCallback(
+    (values: AdjustmentValues) => {
+      const canvas = imageCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const source =
+        adjustmentSnapshotRef.current ??
+        ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const adjusted = applyAdjustmentsToImageData(source, values);
+      ctx.putImageData(adjusted, 0, 0);
+      adjustmentSnapshotRef.current = null;
+      pushHistory();
+    },
+    [applyAdjustmentsToImageData, pushHistory],
+  );
+
+  const handleResetAdjustment = useCallback(() => {
+    const canvas = imageCanvasRef.current;
+    if (!canvas || !adjustmentSnapshotRef.current) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.putImageData(adjustmentSnapshotRef.current, 0, 0);
+    adjustmentSnapshotRef.current = null;
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Edit handlers (편집)
+  // ---------------------------------------------------------------------------
+  const transformBothCanvases = useCallback(
+    (
+      transform: (
+        srcCanvas: HTMLCanvasElement,
+        destCtx: CanvasRenderingContext2D,
+        destCanvas: HTMLCanvasElement,
+      ) => void,
+      newWidth?: number,
+      newHeight?: number,
+    ) => {
+      const imgCanvas = imageCanvasRef.current;
+      const drawCanvas = drawingCanvasRef.current;
+      if (!imgCanvas || !drawCanvas) return;
+
+      const w = newWidth ?? imgCanvas.width;
+      const h = newHeight ?? imgCanvas.height;
+
+      // Transform image canvas
+      const imgTemp = document.createElement("canvas");
+      imgTemp.width = imgCanvas.width;
+      imgTemp.height = imgCanvas.height;
+      imgTemp.getContext("2d")!.drawImage(imgCanvas, 0, 0);
+
+      imgCanvas.width = w;
+      imgCanvas.height = h;
+      const imgCtx = imgCanvas.getContext("2d")!;
+      imgCtx.clearRect(0, 0, w, h);
+      transform(imgTemp, imgCtx, imgCanvas);
+
+      // Transform drawing canvas
+      const drawTemp = document.createElement("canvas");
+      drawTemp.width = drawCanvas.width;
+      drawTemp.height = drawCanvas.height;
+      drawTemp.getContext("2d")!.drawImage(drawCanvas, 0, 0);
+
+      drawCanvas.width = w;
+      drawCanvas.height = h;
+      const drawCtx = drawCanvas.getContext("2d")!;
+      drawCtx.clearRect(0, 0, w, h);
+      transform(drawTemp, drawCtx, drawCanvas);
+
+      // Update display scale
+      const rect = imgCanvas.getBoundingClientRect();
+      if (rect.width > 0) {
+        setDisplayScale({ x: w / rect.width, y: h / rect.height });
+      }
+
+      setCurrentImage(imgCanvas.toDataURL());
+      pushHistory();
+    },
+    [pushHistory, setCurrentImage],
+  );
+
+  const handleRotateLeft = useCallback(() => {
+    const imgCanvas = imageCanvasRef.current;
+    if (!imgCanvas) return;
+    const oldW = imgCanvas.width;
+    const oldH = imgCanvas.height;
+    transformBothCanvases(
+      (src, ctx) => {
+        ctx.translate(0, oldW);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(src, 0, 0);
+      },
+      oldH,
+      oldW,
+    );
+  }, [transformBothCanvases]);
+
+  const handleRotateRight = useCallback(() => {
+    const imgCanvas = imageCanvasRef.current;
+    if (!imgCanvas) return;
+    const oldW = imgCanvas.width;
+    const oldH = imgCanvas.height;
+    transformBothCanvases(
+      (src, ctx) => {
+        ctx.translate(oldH, 0);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(src, 0, 0);
+      },
+      oldH,
+      oldW,
+    );
+  }, [transformBothCanvases]);
+
+  const handleFlipHorizontal = useCallback(() => {
+    const imgCanvas = imageCanvasRef.current;
+    if (!imgCanvas) return;
+    transformBothCanvases((src, ctx, dest) => {
+      ctx.translate(dest.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(src, 0, 0);
+    });
+  }, [transformBothCanvases]);
+
+  const handleFlipVertical = useCallback(() => {
+    const imgCanvas = imageCanvasRef.current;
+    if (!imgCanvas) return;
+    transformBothCanvases((src, ctx, dest) => {
+      ctx.translate(0, dest.height);
+      ctx.scale(1, -1);
+      ctx.drawImage(src, 0, 0);
+    });
+  }, [transformBothCanvases]);
+
+  const handleCrop = useCallback(() => {
+    if (!hasSelection(selection)) return;
+    const bbox = getSelectionBoundingBox(selection.rects);
+    if (!bbox) return;
+
+    const imgCanvas = imageCanvasRef.current;
+    const drawCanvas = drawingCanvasRef.current;
+    if (!imgCanvas || !drawCanvas) return;
+
+    const { x, y, width: cw, height: ch } = bbox;
+
+    // Crop image canvas
+    const imgData = imgCanvas.getContext("2d")!.getImageData(x, y, cw, ch);
+    imgCanvas.width = cw;
+    imgCanvas.height = ch;
+    imgCanvas.getContext("2d")!.putImageData(imgData, 0, 0);
+
+    // Crop drawing canvas
+    const drawData = drawCanvas.getContext("2d")!.getImageData(x, y, cw, ch);
+    drawCanvas.width = cw;
+    drawCanvas.height = ch;
+    drawCanvas.getContext("2d")!.putImageData(drawData, 0, 0);
+
+    // Clear selection and update
+    setSelection({ rects: [], pendingRect: null, pendingMode: "add" });
+    const rect = imgCanvas.getBoundingClientRect();
+    if (rect.width > 0) {
+      setDisplayScale({ x: cw / rect.width, y: ch / rect.height });
+    }
+    setCurrentImage(imgCanvas.toDataURL());
+    pushHistory();
+  }, [selection, setSelection, setCurrentImage, pushHistory]);
+
+  const handleResize = useCallback(
+    (newWidth: number, newHeight: number) => {
+      transformBothCanvases(
+        (src, ctx) => {
+          ctx.drawImage(src, 0, 0, newWidth, newHeight);
+        },
+        newWidth,
+        newHeight,
+      );
+    },
+    [transformBothCanvases],
+  );
+
   // Derive effective rects for the SVG overlay (committed + pending)
   const effectiveRects = getEffectiveRects(selection);
   const canvasWidth = imageCanvasRef.current?.width ?? 0;
   const canvasHeight = imageCanvasRef.current?.height ?? 0;
+  const selectionActive = hasSelection(selection);
 
   return (
     <div {...stylex.props(styles.container)}>
@@ -1120,6 +1600,18 @@ export default function ImageEditor() {
             onApplyFilter={handleApplyFilter}
             onPreviewFilter={handlePreviewFilter}
             onCancelPreview={handleCancelPreview}
+            onPreviewAdjustment={handlePreviewAdjustment}
+            onApplyAdjustment={handleApplyAdjustment}
+            onResetAdjustment={handleResetAdjustment}
+            onRotateLeft={handleRotateLeft}
+            onRotateRight={handleRotateRight}
+            onFlipHorizontal={handleFlipHorizontal}
+            onFlipVertical={handleFlipVertical}
+            onCrop={handleCrop}
+            onResize={handleResize}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+            hasSelection={selectionActive}
             canUndo={history.currentIndex > 0}
             canRedo={history.currentIndex < history.snapshots.length - 1}
           />

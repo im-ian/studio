@@ -3,7 +3,7 @@ import { atom } from "jotai";
 export const originalImageAtom = atom<string | null>(null);
 export const currentImageAtom = atom<string | null>(null);
 
-export type ToolType = "select" | "draw" | "filter" | "edit" | null;
+export type ToolType = "select" | "draw" | "adjust" | "filter" | "edit" | null;
 export type DrawingToolType = "pen" | "brush" | "eraser";
 export type SelectionMode = "add" | "subtract";
 export type FilterType =
@@ -15,7 +15,30 @@ export type FilterType =
   | "warm"
   | "fade"
   | "highlight"
-  | "shadow";
+  | "shadow"
+  | "sharpen"
+  | "blur"
+  | "motionBlur"
+  | "grain"
+  | "denoise";
+
+export interface AdjustmentValues {
+  brightness: number; // -100 to 100
+  contrast: number; // -100 to 100
+  saturation: number; // -100 to 100
+  warmth: number; // -100 to 100
+  tint: number; // -100 to 100
+  gamma: number; // -100 to 100
+}
+
+export const DEFAULT_ADJUSTMENTS: AdjustmentValues = {
+  brightness: 0,
+  contrast: 0,
+  saturation: 0,
+  warmth: 0,
+  tint: 0,
+  gamma: 0,
+};
 
 export interface DrawingSettings {
   selectedSubTool: DrawingToolType | null;
@@ -84,7 +107,50 @@ export const historyAtom = atom<HistoryState>({
   currentIndex: -1,
 });
 
-export const historyLimitAtom = atom<number>(10);
+const SETTINGS_KEY = "studio_settings";
+
+export const DEFAULT_HISTORY_LIMIT = 10;
+export const DEFAULT_CACHE_TTL = 1;
+
+interface StoredSettings {
+  historyLimit: number;
+  cacheTTL: number;
+}
+
+function loadSettings(): StoredSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw) as StoredSettings;
+  } catch {
+    /* ignore */
+  }
+  return { historyLimit: DEFAULT_HISTORY_LIMIT, cacheTTL: DEFAULT_CACHE_TTL };
+}
+
+function saveSettings(settings: StoredSettings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+const _settings = loadSettings();
+
+const _historyLimitAtom = atom<number>(_settings.historyLimit);
+export const historyLimitAtom = atom(
+  (get) => get(_historyLimitAtom),
+  (_get, set, value: number) => {
+    set(_historyLimitAtom, value);
+    saveSettings({ historyLimit: value, cacheTTL: _get(cacheTTLAtom) });
+  },
+);
+
+const _cacheTTLAtom = atom<number>(_settings.cacheTTL);
+/** Auto cache TTL in days. 0 = never auto-delete. Default: 1 day. */
+export const cacheTTLAtom = atom(
+  (get) => get(_cacheTTLAtom),
+  (_get, set, value: number) => {
+    set(_cacheTTLAtom, value);
+    saveSettings({ historyLimit: _get(historyLimitAtom), cacheTTL: value });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Pure helpers for working with SelectionState

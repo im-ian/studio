@@ -1,7 +1,10 @@
 import * as stylex from "@stylexjs/stylex";
-import { Aperture } from "react-feather";
+import { useState } from "react";
+import { Aperture, Settings } from "react-feather";
 
 import { radius, spacing } from "../../tokens.stylex.ts";
+import SettingsModal from "../features/SettingsModal.tsx";
+import IconButton from "../ui/IconButton.tsx";
 
 const styles = stylex.create({
   header: {
@@ -33,6 +36,8 @@ const styles = stylex.create({
 });
 
 export default function Header() {
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   return (
     <header {...stylex.props(styles.header)}>
       <div {...stylex.props(styles.logoContainer)}>
@@ -40,7 +45,16 @@ export default function Header() {
         <h1 {...stylex.props(styles.logo)}>Studio</h1>
       </div>
 
-      <div {...stylex.props(styles.menu)}></div>
+      <div {...stylex.props(styles.menu)}>
+        <IconButton onClick={() => setIsSettingsOpen(true)} aria-label="설정">
+          <Settings size={18} />
+        </IconButton>
+      </div>
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </header>
   );
 }
