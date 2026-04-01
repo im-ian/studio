@@ -230,6 +230,8 @@ export default function ImageEditor() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawingCanvasRef = useRef<HTMLCanvasElement>(null);
+  const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawSnapshotRef = useRef<ImageData | null>(null);
   const [displayScale, setDisplayScale] = useState({ x: 1, y: 1 });
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -574,6 +576,35 @@ export default function ImageEditor() {
         } else {
           ctx.globalCompositeOperation = "source-over";
           if (drawingSettings.selectedSubTool === "brush") {
+            // When a selection is active, draw to a temp canvas to prevent
+            // shadowBlur from bleeding outside the clipped region.
+            if (hasSelection(selection)) {
+              const drawCanvas = drawingCanvasRef.current!;
+              // Save current drawing canvas state for live preview
+              drawSnapshotRef.current = ctx.getImageData(
+                0,
+                0,
+                drawCanvas.width,
+                drawCanvas.height,
+              );
+              const tempCanvas = document.createElement("canvas");
+              tempCanvas.width = drawCanvas.width;
+              tempCanvas.height = drawCanvas.height;
+              tempCanvasRef.current = tempCanvas;
+              const tCtx = tempCanvas.getContext("2d")!;
+              tCtx.strokeStyle = drawingSettings.color;
+              tCtx.lineWidth = currentSize;
+              tCtx.lineCap = "round";
+              tCtx.lineJoin = "round";
+              tCtx.globalCompositeOperation = "source-over";
+              tCtx.shadowBlur = currentSize / 2;
+              tCtx.shadowColor = drawingSettings.color;
+              tCtx.beginPath();
+              tCtx.moveTo(x, y);
+              // No clip on temp canvas; clip will be applied when compositing
+              ctx.restore();
+              return;
+            }
             ctx.shadowBlur = currentSize / 2;
             ctx.shadowColor = drawingSettings.color;
           } else {
@@ -634,7 +665,27 @@ export default function ImageEditor() {
           pendingRect: { x: rx, y: ry, width: rw, height: rh },
         }));
       } else if (activeTool === "draw") {
-        const ctx = drawingCanvasRef.current?.getContext("2d");
+        // If brush + selection, draw to temp canvas and show live preview
+        const tCanvas = tempCanvasRef.current;
+        if (tCanvas) {
+          const tCtx = tCanvas.getContext("2d");
+          if (tCtx) {
+            tCtx.lineTo(currentX, currentY);
+            tCtx.stroke();
+          }
+          // Live preview: restore snapshot, then composite with clip
+          const dCtx = drawingCanvasRef.current?.getContext("2d");
+          if (dCtx && drawSnapshotRef.current) {
+            dCtx.putImageData(drawSnapshotRef.current, 0, 0);
+            dCtx.save();
+            applySelectionClip(dCtx, selection.rects);
+            dCtx.drawImage(tCanvas, 0, 0);
+            dCtx.restore();
+          }
+        }
+        const ctx = !tCanvas
+          ? drawingCanvasRef.current?.getContext("2d")
+          : null;
         if (ctx) {
           ctx.lineTo(currentX, currentY);
           ctx.stroke();
@@ -661,6 +712,7 @@ export default function ImageEditor() {
       isSpacePressed,
       lastMousePos,
       drawingSettings,
+      selection,
     ],
   );
 
@@ -686,8 +738,23 @@ export default function ImageEditor() {
     }
 
     if (activeTool === "draw" && isDragging) {
-      const ctx = drawingCanvasRef.current?.getContext("2d");
-      if (ctx) ctx.restore();
+      // Composite temp canvas (brush + selection) onto drawing canvas with clip
+      const tCanvas = tempCanvasRef.current;
+      if (tCanvas) {
+        const ctx = drawingCanvasRef.current?.getContext("2d");
+        if (ctx && drawSnapshotRef.current) {
+          ctx.putImageData(drawSnapshotRef.current, 0, 0);
+          ctx.save();
+          applySelectionClip(ctx, selection.rects);
+          ctx.drawImage(tCanvas, 0, 0);
+          ctx.restore();
+        }
+        tempCanvasRef.current = null;
+        drawSnapshotRef.current = null;
+      } else {
+        const ctx = drawingCanvasRef.current?.getContext("2d");
+        if (ctx) ctx.restore();
+      }
 
       if (
         drawingSettings.selectedSubTool === "eraser" &&
