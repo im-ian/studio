@@ -807,9 +807,8 @@ export default function ImageEditor() {
   const setOriginalImage = useSetAtom(originalImageAtom);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const loadImageFromBlob = useCallback(
+    (blob: Blob) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
@@ -817,9 +816,33 @@ export default function ImageEditor() {
         setOriginalImage(result);
         setHistory({ snapshots: [], currentIndex: -1 });
       };
-      reader.readAsDataURL(file);
-    }
+      reader.readAsDataURL(blob);
+    },
+    [setCurrentImage, setOriginalImage, setHistory],
+  );
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) loadImageFromBlob(file);
   };
+
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (document.activeElement?.tagName === "INPUT") return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const blob = item.getAsFile();
+          if (blob) loadImageFromBlob(blob);
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [loadImageFromBlob]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape" || e.key === "Backspace") {
@@ -1525,7 +1548,7 @@ export default function ImageEditor() {
           htmlFor="image-upload"
         >
           <p {...stylex.props(styles.placeholder)}>
-            이미지를 업로드하려면 클릭하세요
+            클릭하여 업로드하거나 클립보드에서 붙여넣기 (⌘V)
           </p>
           <input
             ref={inputRef}
