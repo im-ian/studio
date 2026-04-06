@@ -25,8 +25,8 @@ import {
   type SelectionState,
   selectionAtom,
 } from "../../store/imageAtoms";
-import { colors, spacing } from "../../tokens.stylex";
-import Confirm from "../ui/Confirm";
+import { colors, radius, spacing } from "../../tokens.stylex";
+import Modal from "../ui/Modal";
 import ImageToolbar from "./ImageToolbar";
 
 const styles = stylex.create({
@@ -137,6 +137,50 @@ const styles = stylex.create({
     zIndex: 10,
     overflow: "visible",
   },
+  startModalMessage: {
+    color: colors.textMuted,
+    fontSize: "0.9rem",
+    margin: 0,
+    marginBottom: spacing.large,
+    lineHeight: 1.5,
+  },
+  startModalButtons: {
+    display: "flex",
+    flexDirection: "column",
+    gap: spacing.small,
+  },
+  startModalButton: {
+    padding: `${spacing.medium} ${spacing.large}`,
+    borderRadius: radius.md,
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    borderWidth: 0,
+    borderStyle: "solid",
+    transition: "all 0.2s ease",
+    textAlign: "left",
+  },
+  startModalButtonPrimary: {
+    backgroundColor: colors.accent,
+    color: "white",
+    ":hover": {
+      backgroundColor: "rgba(0, 120, 212, 0.8)",
+    },
+  },
+  startModalButtonSecondary: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    color: colors.textMain,
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.12)",
+    },
+  },
+  startModalButtonMuted: {
+    backgroundColor: "transparent",
+    color: colors.textMuted,
+    ":hover": {
+      backgroundColor: "rgba(255, 255, 255, 0.05)",
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -241,12 +285,13 @@ export default function ImageEditor() {
   const [history, setHistory] = useAtom(historyAtom);
   const historyLimit = useAtomValue(historyLimitAtom);
   const cacheTTL = useAtomValue(cacheTTLAtom);
-  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [isStartModalOpen, setIsStartModalOpen] = useState(false);
   const [pendingSession, setPendingSession] = useState<{
     original: string;
     current: string;
     history: HistoryState;
   } | null>(null);
+  const [hasClipboardImage, setHasClipboardImage] = useState(false);
 
   const historyRef = useRef(history);
   useEffect(() => {
@@ -461,6 +506,22 @@ export default function ImageEditor() {
     };
   }, [updateDisplayScale]);
 
+  const setOriginalImage = useSetAtom(originalImageAtom);
+
+  const loadImageFromBlob = useCallback(
+    (blob: Blob) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setCurrentImage(result);
+        setOriginalImage(result);
+        setHistory({ snapshots: [], currentIndex: -1 });
+      };
+      reader.readAsDataURL(blob);
+    },
+    [setCurrentImage, setOriginalImage, setHistory],
+  );
+
   // ---------------------------------------------------------------------------
   // Session persistence
   // ---------------------------------------------------------------------------
@@ -477,27 +538,48 @@ export default function ImageEditor() {
   }, [imageUrl, originalImage, history]);
 
   useEffect(() => {
+    let session: {
+      original: string;
+      current: string;
+      history: HistoryState;
+      lastModified?: number;
+    } | null = null;
+
     const saved = localStorage.getItem("studio_session");
     if (saved) {
       try {
-        const session = JSON.parse(saved);
-        // Auto-delete expired cache
-        if (cacheTTL > 0 && session.lastModified) {
-          const elapsed = Date.now() - session.lastModified;
+        const parsed = JSON.parse(saved);
+        if (cacheTTL > 0 && parsed.lastModified) {
+          const elapsed = Date.now() - parsed.lastModified;
           const ttlMs = cacheTTL * 24 * 60 * 60 * 1000;
           if (elapsed > ttlMs) {
             localStorage.removeItem("studio_session");
-            return;
+          } else if (parsed.original && parsed.current) {
+            session = parsed;
           }
-        }
-        if (session.original && session.current) {
-          setPendingSession(session);
-          setIsRestoreModalOpen(true);
+        } else if (parsed.original && parsed.current) {
+          session = parsed;
         }
       } catch (e) {
         console.error("Failed to parse saved session", e);
       }
     }
+
+    if (session) setPendingSession(session);
+
+    navigator.clipboard
+      .read()
+      .then((items) => {
+        const hasImage = items.some((item) =>
+          item.types.some((t) => t.startsWith("image/")),
+        );
+        setHasClipboardImage(hasImage);
+        if (hasImage || session) setIsStartModalOpen(true);
+      })
+      .catch(() => {
+        // Clipboard permission denied or empty
+        if (session) setIsStartModalOpen(true);
+      });
   }, [cacheTTL]);
 
   const restoreSession = () => {
@@ -505,8 +587,30 @@ export default function ImageEditor() {
       setOriginalImage(pendingSession.original);
       setCurrentImage(pendingSession.current);
       setHistory(pendingSession.history);
-      setIsRestoreModalOpen(false);
     }
+    setIsStartModalOpen(false);
+  };
+
+  const startFromClipboard = async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith("image/"));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          loadImageFromBlob(blob);
+          break;
+        }
+      }
+    } catch {
+      // Clipboard read failed
+    }
+    setIsStartModalOpen(false);
+  };
+
+  const dismissStartModal = () => {
+    if (pendingSession) localStorage.removeItem("studio_session");
+    setIsStartModalOpen(false);
   };
 
   // ---------------------------------------------------------------------------
@@ -804,22 +908,7 @@ export default function ImageEditor() {
     setIsDragging(false);
   };
 
-  const setOriginalImage = useSetAtom(originalImageAtom);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const loadImageFromBlob = useCallback(
-    (blob: Blob) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setCurrentImage(result);
-        setOriginalImage(result);
-        setHistory({ snapshots: [], currentIndex: -1 });
-      };
-      reader.readAsDataURL(blob);
-    },
-    [setCurrentImage, setOriginalImage, setHistory],
-  );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1667,18 +1756,54 @@ export default function ImageEditor() {
         </>
       )}
 
-      <Confirm
-        isOpen={isRestoreModalOpen}
-        onClose={() => {
-          setIsRestoreModalOpen(false);
-          localStorage.removeItem("studio_session");
-        }}
-        onConfirm={restoreSession}
-        title="작업 복구"
-        message="이전에 편집하던 내용이 있습니다. 복구하시겠습니까?"
-        confirmText="복구하기"
-        cancelText="새로시작"
-      />
+      <Modal
+        isOpen={isStartModalOpen}
+        onClose={dismissStartModal}
+        title="어떻게 시작할까요?"
+        showCloseButton={false}
+      >
+        <p {...stylex.props(styles.startModalMessage)}>
+          시작 방법을 선택하세요.
+        </p>
+        <div {...stylex.props(styles.startModalButtons)}>
+          {pendingSession && (
+            <button
+              type="button"
+              onClick={restoreSession}
+              {...stylex.props(
+                styles.startModalButton,
+                styles.startModalButtonPrimary,
+              )}
+            >
+              이전 작업 이어서 하기
+            </button>
+          )}
+          {hasClipboardImage && (
+            <button
+              type="button"
+              onClick={startFromClipboard}
+              {...stylex.props(
+                styles.startModalButton,
+                pendingSession
+                  ? styles.startModalButtonSecondary
+                  : styles.startModalButtonPrimary,
+              )}
+            >
+              클립보드 이미지로 시작하기
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={dismissStartModal}
+            {...stylex.props(
+              styles.startModalButton,
+              styles.startModalButtonMuted,
+            )}
+          >
+            새로 시작하기
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
