@@ -85,14 +85,12 @@ interface AdjustmentSubmenuProps {
   isExiting?: boolean;
   onPreview?: (values: AdjustmentValues) => void;
   onApply?: (values: AdjustmentValues) => void;
-  onReset?: () => void;
 }
 
 export default function AdjustmentSubmenu({
   isExiting,
   onPreview,
   onApply,
-  onReset,
 }: AdjustmentSubmenuProps) {
   const [selectedKey, setSelectedKey] = useState<keyof AdjustmentValues | null>(
     null,

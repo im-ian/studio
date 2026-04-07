@@ -10,7 +10,6 @@ import {
   cacheTTLAtom,
   computeSelectionOutlinePath,
   currentImageAtom,
-  DEFAULT_ADJUSTMENTS,
   drawingSettingsAtom,
   type FilterType,
   getEffectiveRects,
@@ -29,14 +28,6 @@ import {
 import { colors, spacing } from "../../tokens.stylex";
 import Confirm from "../ui/Confirm";
 import ImageToolbar from "./ImageToolbar";
-
-// ---------------------------------------------------------------------------
-// Marching-ants keyframe (unchanged)
-// ---------------------------------------------------------------------------
-const marchingAnts = stylex.keyframes({
-  "0%": { backgroundPosition: "0 0, 0 100%, 0 0, 100% 0" },
-  "100%": { backgroundPosition: "20px 0, -20px 100%, 0 -20px, 100% 20px" },
-});
 
 const styles = stylex.create({
   container: {

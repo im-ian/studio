@@ -209,7 +209,6 @@ export default function ImageToolbar({
             isExiting={isExiting}
             onPreview={onPreviewAdjustment}
             onApply={onApplyAdjustment}
-            onReset={onResetAdjustment}
           />
         );
       case "filter":
